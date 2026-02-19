@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "UI Consistency Investigator",
+  "description": "Deep configurable UI consistency scanning with visual overlays, rulers, and history.",
+  "version": "0.1.0",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "action": {
+    "default_title": "UI Consistency Investigator",
+    "default_popup": "src/popup/popup.html"
+  },
+  "options_page": "src/options/options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "src/shared/config.js",
+        "src/shared/utils.js",
+        "src/content/scanner.js",
+        "src/content/overlay.js",
+        "src/content/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/popup/*", "src/options/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

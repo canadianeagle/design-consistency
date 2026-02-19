@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>UI Consistency Investigator</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">Design Forensics</p>
+        <h1>UI Consistency Investigator</h1>
+        <p class="subtext">Deep scan DOM, CSS, spacing rhythm, and typography drift.</p>
+      </header>
+
+      <section class="control-grid">
+        <button id="scanBtn" class="scan-btn">Run Granular Scan</button>
+        <button id="optionsBtn" class="ghost-btn">Advanced Config</button>
+      </section>
+
+      <section class="toggles">
+        <label><input type="checkbox" id="toggleHighlights" checked /> Highlights</label>
+        <label><input type="checkbox" id="toggleRulers" checked /> Rulers</label>
+        <label><input type="checkbox" id="toggleLabels" checked /> Labels</label>
+        <label><input type="checkbox" id="togglePanel" checked /> Overlay Panel</label>
+      </section>
+
+      <section class="filters">
+        <label for="severityFilter">Overlay Severity</label>
+        <select id="severityFilter">
+          <option value="all">All</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </section>
+
+      <section class="summary" id="summary">
+        <article>
+          <p>Score</p>
+          <strong id="score">-</strong>
+        </article>
+        <article>
+          <p>Findings</p>
+          <strong id="findingsTotal">-</strong>
+        </article>
+        <article>
+          <p>Elements</p>
+          <strong id="elementsTotal">-</strong>
+        </article>
+      </section>
+
+      <section class="results-head">
+        <h2>Top Findings</h2>
+        <div class="actions">
+          <button id="exportBtn" class="ghost-btn">Export JSON</button>
+          <button id="refreshHistoryBtn" class="ghost-btn">Refresh History</button>
+        </div>
+      </section>
+
+      <section id="findingsList" class="findings-list"></section>
+
+      <section class="results-head">
+        <h2>Category Hotspots</h2>
+      </section>
+      <section id="categoryList" class="findings-list"></section>
+
+      <section class="history-head">
+        <h2>History</h2>
+        <button id="clearHistoryBtn" class="ghost-btn danger">Clear</button>
+      </section>
+      <section id="historyList" class="history-list"></section>
+
+      <p id="status" class="status">Waiting for scan.</p>
+    </main>
+
+    <script src="../shared/config.js"></script>
+    <script src="../shared/utils.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
