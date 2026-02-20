@@ -9,32 +9,45 @@
   <body>
     <main class="shell">
       <header class="hero">
-        <p class="eyebrow">Design Forensics</p>
-        <h1>UI Consistency Investigator</h1>
-        <p class="subtext">Deep scan DOM, CSS, spacing rhythm, and typography drift.</p>
+        <img class="hero-logo" src="../../assets/icons/icon-128.png" alt="UI Consistency Investigator logo" />
+        <div>
+          <p class="eyebrow">Design Forensics</p>
+          <h1>UI Consistency Investigator</h1>
+          <p class="subtext">
+            Scan this page, visualize issues, apply generated CSS fixes, and export improvements to your codebase.
+          </p>
+        </div>
       </header>
 
       <section class="control-grid">
-        <button id="scanBtn" class="scan-btn">Run Granular Scan</button>
-        <button id="optionsBtn" class="ghost-btn">Advanced Config</button>
+        <button id="scanBtn" class="scan-btn" title="Run a full scan of the current tab">Run Granular Scan</button>
+        <button id="resetViewBtn" class="ghost-btn" title="Hide overlays and clear injected fixes on this page">Reset View</button>
+        <button id="optionsBtn" class="ghost-btn" title="Open advanced configuration and custom rule builder">Advanced Config</button>
       </section>
 
-      <section class="toggles">
-        <label><input type="checkbox" id="toggleHighlights" checked /> Highlights</label>
-        <label><input type="checkbox" id="toggleRulers" checked /> Rulers</label>
-        <label><input type="checkbox" id="toggleLabels" checked /> Labels</label>
-        <label><input type="checkbox" id="togglePanel" checked /> Overlay Panel</label>
-      </section>
+      <section class="panel-block">
+        <h2 data-tip-target="true" data-tip="Use these toggles to control what appears on the page overlay.">Overlay Controls</h2>
+        <p class="hint">These controls update the overlay in real time without rescanning.</p>
 
-      <section class="filters">
-        <label for="severityFilter">Overlay Severity</label>
-        <select id="severityFilter">
-          <option value="all">All</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
+        <section class="toggles">
+          <label data-tip="Draw color-coded boxes around problematic elements."><input type="checkbox" id="toggleHighlights" checked /> Highlights</label>
+          <label data-tip="Draw ruler lines and spacing guides for each finding."><input type="checkbox" id="toggleRulers" checked /> Rulers</label>
+          <label data-tip="Show compact finding labels directly above highlighted elements."><input type="checkbox" id="toggleLabels" checked /> Labels</label>
+          <label data-tip="Show the floating diagnostics panel on the page."><input type="checkbox" id="togglePanel" checked /> Overlay Panel</label>
+        </section>
+
+        <section class="filters">
+          <label data-tip="Filter overlay to only show specific severity levels.">
+            Overlay Severity
+            <select id="severityFilter">
+              <option value="all">All</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+        </section>
       </section>
 
       <section class="summary" id="summary">
@@ -52,32 +65,55 @@
         </article>
       </section>
 
-      <section class="results-head">
-        <h2>Top Findings</h2>
-        <div class="actions">
-          <button id="exportBtn" class="ghost-btn">Export JSON</button>
-          <button id="refreshHistoryBtn" class="ghost-btn">Refresh History</button>
+      <section class="panel-block">
+        <section class="results-head">
+          <h2 data-tip-target="true" data-tip="These fixes are generated from findings and can be injected into the current page.">Auto CSS Fixes</h2>
+          <span id="fixRuleCount" class="chip">0 rules</span>
+        </section>
+        <p class="hint">Review generated fixes before applying. You can inject for quick validation, copy, or download for source control.</p>
+
+        <div class="actions grid-actions">
+          <button id="applyFixesBtn" class="ghost-btn">Apply Fixes</button>
+          <button id="copyFixesBtn" class="ghost-btn">Copy CSS</button>
+          <button id="downloadFixesBtn" class="ghost-btn">Download CSS</button>
+          <button id="clearFixesBtn" class="ghost-btn">Clear Injected</button>
         </div>
+
+        <textarea id="fixCssPreview" class="code-preview" rows="8" readonly placeholder="Run a scan to generate CSS fixes."></textarea>
       </section>
 
-      <section id="findingsList" class="findings-list"></section>
-
-      <section class="results-head">
-        <h2>Category Hotspots</h2>
+      <section class="panel-block">
+        <section class="results-head">
+          <h2>Top Findings</h2>
+          <div class="actions">
+            <button id="exportBtn" class="ghost-btn">Export JSON</button>
+            <button id="refreshHistoryBtn" class="ghost-btn">Refresh History</button>
+          </div>
+        </section>
+        <section id="findingsList" class="findings-list"></section>
       </section>
-      <section id="categoryList" class="findings-list"></section>
 
-      <section class="history-head">
-        <h2>History</h2>
-        <button id="clearHistoryBtn" class="ghost-btn danger">Clear</button>
+      <section class="panel-block">
+        <section class="results-head">
+          <h2>Category Hotspots</h2>
+        </section>
+        <section id="categoryList" class="findings-list"></section>
       </section>
-      <section id="historyList" class="history-list"></section>
 
-      <p id="status" class="status">Waiting for scan.</p>
+      <section class="panel-block">
+        <section class="history-head">
+          <h2>History</h2>
+          <button id="clearHistoryBtn" class="ghost-btn danger">Clear</button>
+        </section>
+        <section id="historyList" class="history-list"></section>
+      </section>
+
+      <p id="status" class="status">Ready.</p>
     </main>
 
     <script src="../shared/config.js"></script>
     <script src="../shared/utils.js"></script>
+    <script src="../shared/ui-elements.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

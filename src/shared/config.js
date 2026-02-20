@@ -12,6 +12,8 @@
       maxElements: 3000,
       overlapSampleLimit: 850,
       maxOverlapChecks: 18000,
+      autoRescanOnResize: true,
+      autoRescanDebounceMs: 380,
       includeTextNodes: true,
       traceCSS: true
     },
@@ -81,6 +83,12 @@
       enabled: true,
       maxMatchedElements: 1400,
       json: "[]"
+    },
+    fixes: {
+      generateFixes: true,
+      maxRules: 160,
+      useImportant: true,
+      includeComments: true
     },
     overlay: {
       showHighlights: true,

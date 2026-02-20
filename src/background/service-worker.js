@@ -30,6 +30,8 @@ function summarizeForHistory(payload) {
     ? payload.result.findings
     : [];
 
+  const rawFixes = payload.result && payload.result.fixes ? payload.result.fixes : null;
+
   const sanitizedFindings = rawFindings.slice(0, 220).map(function (finding) {
     return {
       id: finding.id,
@@ -58,6 +60,40 @@ function summarizeForHistory(payload) {
     };
   });
 
+  const sanitizedFixes = rawFixes
+    ? {
+        generatedAt: rawFixes.generatedAt || payload.scannedAt,
+        cssText: String(rawFixes.cssText || "").slice(0, 200000),
+        rules: Array.isArray(rawFixes.rules)
+          ? rawFixes.rules.slice(0, 220).map(function (rule, index) {
+              return {
+                id: rule.id || "fix-rule-" + (index + 1),
+                selector: String(rule.selector || ""),
+                issueCount: Number.isFinite(Number.parseFloat(rule.issueCount))
+                  ? Number.parseFloat(rule.issueCount)
+                  : 0,
+                maxSeverity: String(rule.maxSeverity || "medium"),
+                declarations: Array.isArray(rule.declarations)
+                  ? rule.declarations.slice(0, 12).map(function (declaration) {
+                      return {
+                        property: String(declaration.property || ""),
+                        value: String(declaration.value || ""),
+                        sourceRuleId: String(declaration.sourceRuleId || ""),
+                        severity: String(declaration.severity || "medium"),
+                        message: String(declaration.message || "")
+                      };
+                    })
+                  : []
+              };
+            })
+          : []
+      }
+    : {
+        generatedAt: payload.scannedAt,
+        cssText: "",
+        rules: []
+      };
+
   return {
     id:
       "scan-" +
@@ -79,7 +115,8 @@ function summarizeForHistory(payload) {
       meta: payload.result.meta,
       summary: payload.result.summary,
       breakdown: payload.result.breakdown || { byCategory: {}, byRule: {} },
-      findings: sanitizedFindings
+      findings: sanitizedFindings,
+      fixes: sanitizedFixes
     }
   };
 }

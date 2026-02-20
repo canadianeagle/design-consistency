@@ -8,78 +8,100 @@
   </head>
   <body>
     <main class="wrap">
-      <header>
-        <p class="eyebrow">Config Studio</p>
-        <h1>UI Consistency Investigator</h1>
-        <p>
-          Configure the full scan engine: selectors, advanced rules, thresholds,
-          design-token scales, and custom rule DSL.
-        </p>
+      <header class="hero">
+        <img class="hero-logo" src="../../assets/icons/icon-128.png" alt="UI Consistency Investigator logo" />
+        <div>
+          <p class="eyebrow">Config Studio</p>
+          <h1>UI Consistency Investigator</h1>
+          <p>
+            Configure scan depth, rule families, thresholds, auto-fix behavior, and custom rule logic.
+          </p>
+        </div>
       </header>
 
       <section class="panel">
-        <h2>Scanning Scope</h2>
-        <label>
+        <h2 data-tip-target="true" data-tip="Control what gets scanned and how aggressively the engine samples and re-scans.">Scanning Scope</h2>
+        <p class="section-help">
+          Define where scans run and how expensive they can be. Use smaller limits for very large pages and enable auto-rescan when you want live diagnostics after responsive layout changes.
+        </p>
+
+        <label data-tip="CSS selector list for all elements that should be scanned.">
           Include selectors
           <textarea id="includeSelectors" rows="3"></textarea>
         </label>
-        <label>
+
+        <label data-tip="Selectors that should be excluded from analysis.">
           Exclude selectors
           <textarea id="excludeSelectors" rows="3"></textarea>
         </label>
 
         <div class="grid4">
-          <label>Min element area (px2)<input id="minElementArea" type="number" min="1" /></label>
-          <label>Min group size<input id="minGroupSize" type="number" min="2" /></label>
-          <label>Max elements per scan<input id="maxElements" type="number" min="50" /></label>
-          <label>Overlap sample limit<input id="overlapSampleLimit" type="number" min="50" /></label>
-          <label>Max overlap comparisons<input id="maxOverlapChecks" type="number" min="100" /></label>
+          <label data-tip="Ignore tiny elements under this rendered area.">Min element area (px2)<input id="minElementArea" type="number" min="1" /></label>
+          <label data-tip="Minimum peer count required for group-based consistency checks.">Min group size<input id="minGroupSize" type="number" min="2" /></label>
+          <label data-tip="Global cap for elements scanned per run.">Max elements per scan<input id="maxElements" type="number" min="50" /></label>
+          <label data-tip="How many elements to include in overlap/collision checks.">Overlap sample limit<input id="overlapSampleLimit" type="number" min="50" /></label>
+          <label data-tip="Hard cap for pairwise overlap comparisons.">Max overlap comparisons<input id="maxOverlapChecks" type="number" min="100" /></label>
+          <label data-tip="Automatically rescan and rerender results when viewport size changes."><input id="autoRescanOnResize" type="checkbox" /> Auto-rescan on resize</label>
+          <label data-tip="Debounce delay before re-running scans after resize.">Resize rescan debounce ms<input id="autoRescanDebounceMs" type="number" min="50" step="10" /></label>
         </div>
 
         <div class="checks">
-          <label><input id="traceCSS" type="checkbox" /> Trace CSS source hints</label>
-          <label><input id="includeTextNodes" type="checkbox" /> Include text-heavy nodes</label>
+          <label data-tip="Trace matching stylesheet rules for finding source hints."><input id="traceCSS" type="checkbox" /> Trace CSS source hints</label>
+          <label data-tip="Include text-heavy nodes that are not strict controls/components."><input id="includeTextNodes" type="checkbox" /> Include text-heavy nodes</label>
         </div>
       </section>
 
       <section class="panel">
-        <h2>Grouping Strategy</h2>
+        <h2 data-tip-target="true" data-tip="Controls how similar elements are grouped for peer comparison.">Grouping Strategy</h2>
+        <p class="section-help">
+          Grouping determines which elements are compared to each other. If findings feel noisy, tighten grouping with class fingerprints; if you miss drift, loosen grouping dimensions.
+        </p>
+
         <div class="checks">
-          <label><input id="useTag" type="checkbox" /> Group by tag name</label>
-          <label><input id="useRole" type="checkbox" /> Group by ARIA role</label>
-          <label><input id="useClassFingerprint" type="checkbox" /> Group by class fingerprint</label>
+          <label data-tip="Use tag name (button, input, div) as part of grouping key."><input id="useTag" type="checkbox" /> Group by tag name</label>
+          <label data-tip="Use role attributes in grouping key."><input id="useRole" type="checkbox" /> Group by ARIA role</label>
+          <label data-tip="Use stable class tokens in grouping key."><input id="useClassFingerprint" type="checkbox" /> Group by class fingerprint</label>
         </div>
-        <label>
+
+        <label data-tip="Number of class tokens used per element for fingerprinting.">
           Class fingerprint depth
           <input id="classFingerprintDepth" type="number" min="1" max="5" />
         </label>
       </section>
 
       <section class="panel">
-        <h2>Rule Families</h2>
+        <h2 data-tip-target="true" data-tip="Enable or disable entire families of scanning rules.">Rule Families</h2>
+        <p class="section-help">
+          Start broad for discovery, then disable families that are irrelevant for your product. Keep custom rules on for team-specific constraints.
+        </p>
+
         <div class="checks multi">
-          <label><input id="checkPadding" type="checkbox" /> Padding consistency</label>
-          <label><input id="checkMargin" type="checkbox" /> Margin consistency</label>
-          <label><input id="checkTypography" type="checkbox" /> Typography consistency</label>
-          <label><input id="checkColors" type="checkbox" /> Color consistency</label>
-          <label><input id="checkBorderRadius" type="checkbox" /> Border radius consistency</label>
-          <label><input id="checkBorderWidth" type="checkbox" /> Border width consistency</label>
-          <label><input id="checkAlignment" type="checkbox" /> Baseline alignment</label>
-          <label><input id="checkWhitespaceRhythm" type="checkbox" /> Whitespace rhythm</label>
-          <label><input id="checkDimensionRatios" type="checkbox" /> Dimension ratio drift</label>
-          <label><input id="checkTypographyAdvanced" type="checkbox" /> Typography readability rules</label>
-          <label><input id="checkLayoutAdvanced" type="checkbox" /> Advanced layout collision/grid rules</label>
-          <label><input id="checkAccessibility" type="checkbox" /> Accessibility + semantics rules</label>
-          <label><input id="checkInteraction" type="checkbox" /> Interaction affordance rules</label>
-          <label><input id="checkContent" type="checkbox" /> Content clipping rules</label>
-          <label><input id="checkCssQuality" type="checkbox" /> CSS quality + maintainability rules</label>
-          <label><input id="checkDesignTokens" type="checkbox" /> Design token scale + diversity rules</label>
-          <label><input id="checkCustomRules" type="checkbox" /> Custom JSON rules</label>
+          <label data-tip="Compare per-side padding values across peers."><input id="checkPadding" type="checkbox" /> Padding consistency</label>
+          <label data-tip="Compare per-side margin values across peers."><input id="checkMargin" type="checkbox" /> Margin consistency</label>
+          <label data-tip="Compare font-family/size/line-height/letter-spacing."><input id="checkTypography" type="checkbox" /> Typography consistency</label>
+          <label data-tip="Check text and background palette drift."><input id="checkColors" type="checkbox" /> Color consistency</label>
+          <label data-tip="Compare border radius consistency."><input id="checkBorderRadius" type="checkbox" /> Border radius consistency</label>
+          <label data-tip="Compare border width consistency."><input id="checkBorderWidth" type="checkbox" /> Border width consistency</label>
+          <label data-tip="Check baseline edge alignment drift."><input id="checkAlignment" type="checkbox" /> Baseline alignment</label>
+          <label data-tip="Detect vertical/horizontal whitespace rhythm breaks."><input id="checkWhitespaceRhythm" type="checkbox" /> Whitespace rhythm</label>
+          <label data-tip="Find aspect-ratio inconsistencies in peer groups."><input id="checkDimensionRatios" type="checkbox" /> Dimension ratio drift</label>
+          <label data-tip="Readability-focused type checks like line-height ratio."><input id="checkTypographyAdvanced" type="checkbox" /> Typography readability rules</label>
+          <label data-tip="Advanced layout checks including collision and row/column rhythm."><input id="checkLayoutAdvanced" type="checkbox" /> Advanced layout collision/grid rules</label>
+          <label data-tip="Contrast, touch target, labels, heading structure, duplicate IDs."><input id="checkAccessibility" type="checkbox" /> Accessibility + semantics rules</label>
+          <label data-tip="Affordance and keyboard behavior checks."><input id="checkInteraction" type="checkbox" /> Interaction affordance rules</label>
+          <label data-tip="Detect clipping and overflow content risks."><input id="checkContent" type="checkbox" /> Content clipping rules</label>
+          <label data-tip="Maintainability checks for selectors, !important, vars, and entropy."><input id="checkCssQuality" type="checkbox" /> CSS quality + maintainability rules</label>
+          <label data-tip="Token scale and diversity checks against configured design scales."><input id="checkDesignTokens" type="checkbox" /> Design token scale + diversity rules</label>
+          <label data-tip="Execute custom JSON rules defined below."><input id="checkCustomRules" type="checkbox" /> Custom JSON rules</label>
         </div>
       </section>
 
       <section class="panel">
-        <h2>Thresholds</h2>
+        <h2 data-tip-target="true" data-tip="Set per-rule tolerance values that determine what counts as drift.">Thresholds</h2>
+        <p class="section-help">
+          These values control finding sensitivity. Lower values catch subtle drift; higher values reduce noise. Tune per product and viewport density.
+        </p>
+
         <div class="grid4">
           <label>Padding drift px<input id="paddingPx" type="number" step="0.1" /></label>
           <label>Margin drift px<input id="marginPx" type="number" step="0.1" /></label>
@@ -115,18 +137,21 @@
       </section>
 
       <section class="panel">
-        <h2>Design Token Scales</h2>
-        <p class="hint">Comma-separated numeric tokens used for off-scale detection.</p>
+        <h2 data-tip-target="true" data-tip="Reference token scales used for off-scale drift detection.">Design Token Scales</h2>
+        <p class="section-help">
+          Enter comma-separated numeric values from your design system (spacing/radius/type scales). Scanner flags values that drift from these scales.
+        </p>
+
         <div class="grid3">
-          <label>
+          <label data-tip="Spacing scale in px values.">
             Spacing scale
             <textarea id="spacingScale" rows="3"></textarea>
           </label>
-          <label>
+          <label data-tip="Border radius scale in px values.">
             Radius scale
             <textarea id="radiusScale" rows="3"></textarea>
           </label>
-          <label>
+          <label data-tip="Font size scale in px values.">
             Font scale
             <textarea id="fontScale" rows="3"></textarea>
           </label>
@@ -134,16 +159,20 @@
       </section>
 
       <section class="panel">
-        <h2>Custom Rules Engine</h2>
+        <h2 data-tip-target="true" data-tip="Create custom assertions and consistency rules without writing extension code.">Custom Rules Engine</h2>
+        <p class="section-help">
+          Use the visual Rule Builder for most workflows. Sync to JSON to version-control or bulk edit rules. `assert` validates one value; `consistency` compares matched elements against a baseline.
+        </p>
+
         <div class="checks">
-          <label><input id="customRulesEnabled" type="checkbox" /> Enable custom rule execution</label>
-          <label>Max matched elements per custom rule<input id="maxMatchedElements" type="number" min="1" /></label>
+          <label data-tip="Master switch for custom rule execution."><input id="customRulesEnabled" type="checkbox" /> Enable custom rule execution</label>
+          <label data-tip="Per-rule cap to prevent very expensive selector matches.">Max matched elements per custom rule<input id="maxMatchedElements" type="number" min="1" /></label>
         </div>
 
         <div class="rule-builder">
-          <h3>Rule Builder UI</h3>
+          <h3 data-tip-target="true" data-tip="Build rules visually, then sync to JSON for persistence and portability.">Rule Builder UI</h3>
           <p class="hint">
-            Build rules visually, then sync to JSON. Supports <code>assert</code> and <code>consistency</code>.
+            Builder supports `assert` and `consistency` rule types with severity, selector, source, property, operator, and tolerance controls.
           </p>
 
           <div class="grid4">
@@ -190,7 +219,7 @@
                 <option value="notEmpty">notEmpty</option>
               </select>
             </label>
-            <label>Value<input id="builderValue" type="text" placeholder="44 or button,link" /></label>
+            <label>Value<input id="builderValue" type="text" placeholder="44 or primary,secondary" /></label>
             <label>Tolerance (near/consistency)<input id="builderTolerance" type="number" step="0.1" placeholder="2" /></label>
             <label>Baseline (consistency)
               <select id="builderBaseline">
@@ -198,7 +227,7 @@
                 <option value="mode">mode</option>
               </select>
             </label>
-            <label>Message<input id="builderMessage" type="text" placeholder="Buttons should be min 44px height" /></label>
+            <label>Message<input id="builderMessage" type="text" placeholder="Buttons should be at least 44px high" /></label>
           </div>
 
           <div class="builder-actions">
@@ -212,28 +241,49 @@
           <div id="ruleBuilderList" class="rule-builder-list"></div>
         </div>
 
-        <label>
+        <label data-tip="Raw JSON for custom rules. Builder sync writes to this field.">
           Custom rules JSON
           <textarea id="customRulesJson" rows="10"></textarea>
         </label>
         <p class="hint">
-          DSL supports `assert` and `consistency` rules. Example:
+          DSL example:
           <code>[{"id":"btn-min-height","selector":"button","source":"metric","property":"height","operator":"gte","value":44,"severity":"high"}]</code>
         </p>
       </section>
 
       <section class="panel">
-        <h2>Overlay + Reporting</h2>
+        <h2 data-tip-target="true" data-tip="Configure auto-generated CSS patches derived from scan findings.">Auto Fix Generator</h2>
+        <p class="section-help">
+          Generated fixes are intended for rapid validation and pull-request starter patches. Keep this enabled to see candidate CSS in popup after each scan, then copy or download the final patch.
+        </p>
+
         <div class="checks">
-          <label><input id="showHighlights" type="checkbox" /> Show highlights</label>
-          <label><input id="showRulers" type="checkbox" /> Show ruler lines</label>
-          <label><input id="showLabels" type="checkbox" /> Show labels</label>
-          <label><input id="showPanel" type="checkbox" /> Show panel</label>
+          <label data-tip="Generate CSS patch suggestions from each scan result."><input id="generateFixes" type="checkbox" /> Generate CSS fixes after each scan</label>
+          <label data-tip="Append !important to generated declarations for stronger in-page validation."><input id="fixUseImportant" type="checkbox" /> Use !important in generated CSS</label>
+          <label data-tip="Include explanatory comments above each generated selector block."><input id="fixIncludeComments" type="checkbox" /> Include explanatory comments</label>
+        </div>
+
+        <div class="grid4">
+          <label data-tip="Limit number of selector blocks generated in one scan.">Max generated fix blocks<input id="fixMaxRules" type="number" min="1" /></label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 data-tip-target="true" data-tip="Controls overlay diagnostics visibility and report payload size.">Overlay + Reporting</h2>
+        <p class="section-help">
+          Configure diagnostics UX and report payload detail. Use lower caps for faster history storage and cleaner issue triage.
+        </p>
+
+        <div class="checks">
+          <label data-tip="Show highlight boxes for detected issues."><input id="showHighlights" type="checkbox" /> Show highlights</label>
+          <label data-tip="Show ruler lines and spacing guides."><input id="showRulers" type="checkbox" /> Show ruler lines</label>
+          <label data-tip="Show compact labels above highlighted elements."><input id="showLabels" type="checkbox" /> Show labels</label>
+          <label data-tip="Show floating overlay panel with score and top issues."><input id="showPanel" type="checkbox" /> Show panel</label>
         </div>
         <div class="grid4">
-          <label>Max visible findings<input id="maxVisibleFindings" type="number" min="1" /></label>
-          <label>Max findings stored<input id="maxFindings" type="number" min="10" /></label>
-          <label>
+          <label data-tip="Max findings rendered in overlay at once.">Max visible findings<input id="maxVisibleFindings" type="number" min="1" /></label>
+          <label data-tip="Max findings retained in report payload.">Max findings stored<input id="maxFindings" type="number" min="10" /></label>
+          <label data-tip="Initial overlay severity filter when scan finishes.">
             Severity filter
             <select id="severityFilter">
               <option value="all">All</option>
@@ -245,9 +295,9 @@
           </label>
         </div>
         <div class="checks">
-          <label><input id="includeHtmlSnippet" type="checkbox" /> Include HTML snippet in findings</label>
-          <label><input id="includeSourceHints" type="checkbox" /> Include CSS source hints in findings</label>
-          <label><input id="includeComputedSnapshot" type="checkbox" /> Include computed snapshot metadata</label>
+          <label data-tip="Include element HTML snippets in findings."><input id="includeHtmlSnippet" type="checkbox" /> Include HTML snippet in findings</label>
+          <label data-tip="Include matched selector/source hints for fix tracing."><input id="includeSourceHints" type="checkbox" /> Include CSS source hints in findings</label>
+          <label data-tip="Include computed-style metadata snapshots (larger payload)."><input id="includeComputedSnapshot" type="checkbox" /> Include computed snapshot metadata</label>
         </div>
       </section>
 
@@ -263,6 +313,7 @@
 
     <script src="../shared/config.js"></script>
     <script src="../shared/utils.js"></script>
+    <script src="../shared/ui-elements.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

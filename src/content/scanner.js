@@ -56,6 +56,44 @@
     "button, a, input, select, textarea, summary, [role='button'], [role='tab'], [role='menuitem'], [tabindex], [onclick]";
   const FORM_SELECTOR = "input:not([type='hidden']), select, textarea";
   const HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6";
+  const FIXABLE_RULE_PROPERTY_MAP = {
+    "spacing-padding-top": "padding-top",
+    "spacing-padding-right": "padding-right",
+    "spacing-padding-bottom": "padding-bottom",
+    "spacing-padding-left": "padding-left",
+    "spacing-margin-top": "margin-top",
+    "spacing-margin-right": "margin-right",
+    "spacing-margin-bottom": "margin-bottom",
+    "spacing-margin-left": "margin-left",
+    "type-font-size": "font-size",
+    "type-line-height": "line-height",
+    "type-letter-spacing": "letter-spacing",
+    "type-font-family": "font-family",
+    "color-foreground": "color",
+    "color-background": "background-color",
+    "shape-border-radius": "border-radius",
+    "shape-border-width": "border-width",
+    "layer-z-index-outlier": "z-index",
+    "interaction-cursor-affordance": "cursor"
+  };
+
+  const PIXEL_PROPERTY_SET = new Set([
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "margin-top",
+    "margin-right",
+    "margin-bottom",
+    "margin-left",
+    "font-size",
+    "line-height",
+    "letter-spacing",
+    "border-radius",
+    "border-width",
+    "min-width",
+    "min-height"
+  ]);
 
   function toPageRect(rect) {
     const scrollX = window.scrollX || 0;
@@ -2724,6 +2762,462 @@
     });
   }
 
+  function severityWeight(severity) {
+    if (severity === "critical") {
+      return 4;
+    }
+    if (severity === "high") {
+      return 3;
+    }
+    if (severity === "medium") {
+      return 2;
+    }
+    return 1;
+  }
+
+  function formatCssNumber(value) {
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+    return String(utils.toFixed(value, 2));
+  }
+
+  function parsePixelValue(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return null;
+    }
+
+    const pxMatch = text.match(/-?\d+(?:\.\d+)?\s*px/i);
+    if (pxMatch) {
+      const parsed = Number.parseFloat(pxMatch[0]);
+      if (Number.isFinite(parsed)) {
+        return formatCssNumber(parsed) + "px";
+      }
+    }
+
+    const numericMatch = text.match(/^-?\d+(?:\.\d+)?$/);
+    if (numericMatch) {
+      const parsed = Number.parseFloat(text);
+      if (Number.isFinite(parsed)) {
+        return formatCssNumber(parsed) + "px";
+      }
+    }
+
+    return null;
+  }
+
+  function parseUpperBoundNumber(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return null;
+    }
+
+    const boundMatch = text.match(/<=\s*(-?\d+(?:\.\d+)?)/);
+    if (boundMatch) {
+      const parsed = Number.parseFloat(boundMatch[1]);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    const numeric = Number.parseFloat(text);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  function parseTouchTarget(expectedText) {
+    const text = String(expectedText || "").trim();
+    const match = text.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*px/i);
+    if (!match) {
+      return null;
+    }
+
+    const width = Number.parseFloat(match[1]);
+    const height = Number.parseFloat(match[2]);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      return null;
+    }
+
+    return {
+      width: formatCssNumber(width) + "px",
+      height: formatCssNumber(height) + "px"
+    };
+  }
+
+  function parseTokenPropertyFromMessage(messageText) {
+    const text = String(messageText || "").trim();
+    const match = text.match(/^([a-z-]+)\s+is off the configured design-token scale/i);
+    return match ? String(match[1]).toLowerCase() : "";
+  }
+
+  function isColorLike(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return false;
+    }
+    return /^#([0-9a-f]{3,8})$/i.test(text) || /^rgba?\(/i.test(text) || /^hsla?\(/i.test(text);
+  }
+
+  function resolveFixProperty(finding) {
+    const ruleId = String(finding.ruleId || "");
+    if (FIXABLE_RULE_PROPERTY_MAP[ruleId]) {
+      return FIXABLE_RULE_PROPERTY_MAP[ruleId];
+    }
+
+    if (
+      ruleId === "token-spacing-scale" ||
+      ruleId === "token-radius-scale" ||
+      ruleId === "token-font-scale"
+    ) {
+      return parseTokenPropertyFromMessage(finding.message);
+    }
+
+    return "";
+  }
+
+  function resolveFixValue(property, finding) {
+    if (!property) {
+      return null;
+    }
+
+    if (property === "cursor") {
+      return "pointer";
+    }
+
+    if (property === "z-index") {
+      const zBound = parseUpperBoundNumber(finding.expected);
+      return Number.isFinite(zBound) ? formatCssNumber(zBound) : null;
+    }
+
+    if (property === "font-family") {
+      const expectedFont = String(finding.expected || "").trim();
+      return expectedFont || null;
+    }
+
+    if (property === "color" || property === "background-color") {
+      const expectedColor = String(finding.expected || "").trim();
+      return isColorLike(expectedColor) ? expectedColor : null;
+    }
+
+    if (PIXEL_PROPERTY_SET.has(property)) {
+      return parsePixelValue(finding.expected);
+    }
+
+    const fallback = String(finding.expected || "").trim();
+    return fallback || null;
+  }
+
+  function isSelectorFixable(selector) {
+    const text = String(selector || "").trim();
+    if (!text || text === "document") {
+      return false;
+    }
+    if (text.length > 320 || text.includes("\n")) {
+      return false;
+    }
+    return true;
+  }
+
+  function createFixCandidate(selector, property, value, finding) {
+    if (!isSelectorFixable(selector) || !property || !value) {
+      return null;
+    }
+
+    return {
+      selector: selector,
+      property: property,
+      value: value,
+      ruleId: finding.ruleId,
+      severity: finding.severity,
+      delta: Number.parseFloat(finding.delta) || 0,
+      findingId: finding.id,
+      message: finding.message || ""
+    };
+  }
+
+  function buildFixCandidatesForFinding(finding) {
+    const candidates = [];
+    const selector = String(finding.selector || "").trim();
+    const ruleId = String(finding.ruleId || "");
+
+    if (ruleId === "a11y-touch-target-size") {
+      const target = parseTouchTarget(finding.expected);
+      if (!target || !isSelectorFixable(selector)) {
+        return candidates;
+      }
+
+      const widthCandidate = createFixCandidate(
+        selector,
+        "min-width",
+        target.width,
+        finding
+      );
+      const heightCandidate = createFixCandidate(
+        selector,
+        "min-height",
+        target.height,
+        finding
+      );
+      if (widthCandidate) {
+        candidates.push(widthCandidate);
+      }
+      if (heightCandidate) {
+        candidates.push(heightCandidate);
+      }
+      return candidates;
+    }
+
+    if (ruleId === "content-text-overflow-clip") {
+      if (!isSelectorFixable(selector)) {
+        return candidates;
+      }
+
+      [
+        ["overflow", "hidden"],
+        ["text-overflow", "ellipsis"],
+        ["white-space", "nowrap"]
+      ].forEach(function (entry) {
+        const candidate = createFixCandidate(selector, entry[0], entry[1], finding);
+        if (candidate) {
+          candidates.push(candidate);
+        }
+      });
+      return candidates;
+    }
+
+    if (ruleId === "content-text-vertical-clip") {
+      const candidate = createFixCandidate(selector, "overflow-y", "visible", finding);
+      if (candidate) {
+        candidates.push(candidate);
+      }
+      return candidates;
+    }
+
+    const property = resolveFixProperty(finding);
+    const value = resolveFixValue(property, finding);
+    const singleCandidate = createFixCandidate(selector, property, value, finding);
+    if (singleCandidate) {
+      candidates.push(singleCandidate);
+    }
+    return candidates;
+  }
+
+  function buildGlobalFixCandidates(findings) {
+    const output = [];
+
+    const focusFinding = findings.find(function (finding) {
+      return finding.ruleId === "interaction-focus-style-coverage";
+    });
+    if (focusFinding) {
+      const selector =
+        ":where(button, a[href], input:not([type='hidden']), select, textarea, summary, [role='button'], [role='tab'], [role='menuitem'], [tabindex]):focus-visible";
+      const outlineCandidate = createFixCandidate(
+        selector,
+        "outline",
+        "2px solid #1d8ea9",
+        focusFinding
+      );
+      const offsetCandidate = createFixCandidate(
+        selector,
+        "outline-offset",
+        "2px",
+        focusFinding
+      );
+      if (outlineCandidate) {
+        output.push(outlineCandidate);
+      }
+      if (offsetCandidate) {
+        output.push(offsetCandidate);
+      }
+    }
+
+    return output;
+  }
+
+  function collectFixCandidates(findings) {
+    const output = [];
+
+    findings.forEach(function (finding) {
+      buildFixCandidatesForFinding(finding).forEach(function (candidate) {
+        output.push(candidate);
+      });
+    });
+
+    buildGlobalFixCandidates(findings).forEach(function (candidate) {
+      output.push(candidate);
+    });
+
+    return output;
+  }
+
+  function mergeFixCandidates(candidates, maxRules) {
+    const bySelector = new Map();
+
+    candidates.forEach(function (candidate) {
+      if (!candidate || !candidate.selector || !candidate.property || !candidate.value) {
+        return;
+      }
+
+      const selector = candidate.selector;
+      if (!bySelector.has(selector)) {
+        bySelector.set(selector, {
+          declarations: new Map(),
+          maxScore: 0
+        });
+      }
+
+      const selectorEntry = bySelector.get(selector);
+      const score = severityWeight(candidate.severity) * 1000 + candidate.delta;
+      if (score > selectorEntry.maxScore) {
+        selectorEntry.maxScore = score;
+      }
+
+      const declarationKey = candidate.property;
+      const current = selectorEntry.declarations.get(declarationKey);
+      if (current && current.score >= score) {
+        return;
+      }
+
+      selectorEntry.declarations.set(declarationKey, {
+        property: candidate.property,
+        value: candidate.value,
+        ruleId: candidate.ruleId,
+        severity: candidate.severity,
+        delta: candidate.delta,
+        findingId: candidate.findingId,
+        message: candidate.message,
+        score: score
+      });
+    });
+
+    const rules = Array.from(bySelector.entries())
+      .map(function (entry) {
+        const selector = entry[0];
+        const bucket = entry[1];
+        const declarations = Array.from(bucket.declarations.values()).sort(function (a, b) {
+          return a.property.localeCompare(b.property);
+        });
+        if (!declarations.length) {
+          return null;
+        }
+
+        const findingIds = new Set();
+        declarations.forEach(function (declaration) {
+          if (declaration.findingId) {
+            findingIds.add(declaration.findingId);
+          }
+        });
+
+        return {
+          selector: selector,
+          declarations: declarations.map(function (declaration) {
+            return {
+              property: declaration.property,
+              value: declaration.value,
+              sourceRuleId: declaration.ruleId,
+              severity: declaration.severity,
+              message: declaration.message
+            };
+          }),
+          issueCount: findingIds.size,
+          maxScore: bucket.maxScore,
+          maxSeverity: declarations
+            .slice()
+            .sort(function (a, b) {
+              return severityWeight(b.severity) - severityWeight(a.severity);
+            })[0].severity
+        };
+      })
+      .filter(Boolean)
+      .sort(function (a, b) {
+        if (b.maxScore !== a.maxScore) {
+          return b.maxScore - a.maxScore;
+        }
+        return a.selector.localeCompare(b.selector);
+      });
+
+    return rules.slice(0, maxRules);
+  }
+
+  function buildFixCssText(rules, useImportant, includeComments) {
+    if (!rules.length) {
+      return "";
+    }
+
+    const importantSuffix = useImportant ? " !important" : "";
+    const lines = [];
+    if (includeComments) {
+      lines.push(
+        "/* Generated by UI Consistency Investigator. Validate before merging into source control. */"
+      );
+      lines.push("");
+    }
+
+    rules.forEach(function (rule, index) {
+      if (includeComments) {
+        lines.push(
+          "/* Fix " +
+            (index + 1) +
+            " | severity " +
+            rule.maxSeverity +
+            " | related findings " +
+            rule.issueCount +
+            " */"
+        );
+      }
+      lines.push(rule.selector + " {");
+      rule.declarations.forEach(function (declaration) {
+        lines.push(
+          "  " +
+            declaration.property +
+            ": " +
+            declaration.value +
+            importantSuffix +
+            ";"
+        );
+      });
+      lines.push("}");
+      lines.push("");
+    });
+
+    return lines.join("\n").trim();
+  }
+
+  function buildFixPackage(findings, config) {
+    const defaults = root.DEFAULT_CONFIG && root.DEFAULT_CONFIG.fixes
+      ? root.DEFAULT_CONFIG.fixes
+      : {
+          generateFixes: true,
+          maxRules: 140,
+          useImportant: true,
+          includeComments: true
+        };
+    const fixConfig = utils.deepMerge(defaults, config.fixes || {});
+
+    if (!fixConfig.generateFixes) {
+      return {
+        generatedAt: utils.nowIso(),
+        rules: [],
+        cssText: "",
+        disabled: true
+      };
+    }
+
+    const maxRules = Number.parseFloat(fixConfig.maxRules);
+    const limit = Number.isFinite(maxRules) && maxRules > 0 ? Math.round(maxRules) : 140;
+    const candidates = collectFixCandidates(findings);
+    const rules = mergeFixCandidates(candidates, limit);
+    const cssText = buildFixCssText(
+      rules,
+      fixConfig.useImportant !== false,
+      fixConfig.includeComments !== false
+    );
+
+    return {
+      generatedAt: utils.nowIso(),
+      rules: rules,
+      cssText: cssText
+    };
+  }
+
   function runScan(config) {
     const startedAt = performance.now();
 
@@ -2821,6 +3315,7 @@
 
     const limitedFindings = deduped.slice(0, config.reporting.maxFindings);
     const summary = scoreFromFindings(limitedFindings);
+    const fixes = buildFixPackage(limitedFindings, config);
 
     const elapsedMs = performance.now() - startedAt;
 
@@ -2846,7 +3341,8 @@
         byCategory: categoryBreakdown(limitedFindings),
         byRule: ruleBreakdown(limitedFindings)
       },
-      findings: limitedFindings
+      findings: limitedFindings,
+      fixes: fixes
     };
   }
 

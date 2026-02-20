@@ -49,6 +49,7 @@
     { id: "maxElements", path: "scanning.maxElements" },
     { id: "overlapSampleLimit", path: "scanning.overlapSampleLimit" },
     { id: "maxOverlapChecks", path: "scanning.maxOverlapChecks" },
+    { id: "autoRescanDebounceMs", path: "scanning.autoRescanDebounceMs" },
     { id: "classFingerprintDepth", path: "grouping.classFingerprintDepth" },
     { id: "paddingPx", path: "thresholds.paddingPx" },
     { id: "marginPx", path: "thresholds.marginPx" },
@@ -81,6 +82,7 @@
     { id: "styleEntropy", path: "thresholds.styleEntropy" },
     { id: "minVarUsageRatio", path: "thresholds.minVarUsageRatio" },
     { id: "maxMatchedElements", path: "customRules.maxMatchedElements" },
+    { id: "fixMaxRules", path: "fixes.maxRules" },
     { id: "maxVisibleFindings", path: "overlay.maxVisibleFindings" },
     { id: "maxFindings", path: "reporting.maxFindings" }
   ];
@@ -88,6 +90,7 @@
   const checkFields = [
     { id: "traceCSS", path: "scanning.traceCSS" },
     { id: "includeTextNodes", path: "scanning.includeTextNodes" },
+    { id: "autoRescanOnResize", path: "scanning.autoRescanOnResize" },
     { id: "useTag", path: "grouping.useTag" },
     { id: "useRole", path: "grouping.useRole" },
     { id: "useClassFingerprint", path: "grouping.useClassFingerprint" },
@@ -109,6 +112,9 @@
     { id: "checkDesignTokens", path: "rules.checkDesignTokens" },
     { id: "checkCustomRules", path: "rules.checkCustomRules" },
     { id: "customRulesEnabled", path: "customRules.enabled" },
+    { id: "generateFixes", path: "fixes.generateFixes" },
+    { id: "fixUseImportant", path: "fixes.useImportant" },
+    { id: "fixIncludeComments", path: "fixes.includeComments" },
     { id: "showHighlights", path: "overlay.showHighlights" },
     { id: "showRulers", path: "overlay.showRulers" },
     { id: "showLabels", path: "overlay.showLabels" },
@@ -749,6 +755,13 @@
   }
 
   async function init() {
+    if (
+      globalThis.UIConsistencyUI &&
+      typeof globalThis.UIConsistencyUI.enhanceFormControls === "function"
+    ) {
+      globalThis.UIConsistencyUI.enhanceFormControls(document);
+    }
+
     const config = await getConfig();
     fillForm(config);
 

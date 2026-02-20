@@ -9,6 +9,9 @@ A configurable Chrome Extension (Manifest V3) that scans a live page for UI/desi
 - Rule Builder UI for custom rules (no code required)
 - JSON DSL custom rules (`assert` + `consistency`) for advanced teams
 - Overlay diagnostics: issue boxes, guide lines/rulers, severity filtering, score panel
+- Auto-fix engine: generates CSS patch candidates from findings, injects into page, copy/download CSS
+- View controls: reset view, clear injected fixes, and close overlay directly from the in-page panel
+- Responsive re-analysis: optional auto-rescan and re-render on viewport resize
 - Configurable thresholds, grouping strategy, selectors, and reporting output
 - Scan history and replay overlay for the same page URL
 
@@ -35,6 +38,17 @@ You can:
 - property: `paddingTop`
 - baseline: `median`
 - tolerance: `2`
+
+## Auto-Fix Workflow
+
+1. Run a scan from popup.
+2. Review generated CSS in **Auto CSS Fixes**.
+3. Use:
+   - **Apply Fixes** to inject CSS into the current page.
+   - **Copy CSS** to paste into your codebase.
+   - **Download CSS** to save a patch file.
+   - **Clear Injected** to remove runtime fix CSS from the page.
+4. If needed, use **Reset View** to clear overlays and scan state for the current tab.
 
 ## Project Structure
 

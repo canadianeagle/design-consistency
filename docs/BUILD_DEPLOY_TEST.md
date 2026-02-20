@@ -85,8 +85,26 @@ git push origin v0.2.1
 2. Run a scan from popup
 3. Confirm overlay boxes and rulers appear
 4. Toggle `Highlights/Rulers/Labels/Panel` and verify behavior
-5. Verify top findings + category hotspot list populate
-6. Export JSON and confirm payload contains `summary`, `breakdown`, and `findings`
+5. Verify overlay panel includes a **Close Overlay** button and it hides all overlay layers
+6. Verify top findings + category hotspot list populate
+7. Export JSON and confirm payload contains `summary`, `breakdown`, `findings`, and `fixes`
+
+## Auto-fix workflow tests
+
+1. Run a scan and verify **Auto CSS Fixes** panel shows generated CSS
+2. Click **Apply Fixes** and confirm runtime styles are injected on the page
+3. Click **Clear Injected** and confirm injected styles are removed
+4. Click **Copy CSS** and verify clipboard contains generated CSS
+5. Click **Download CSS** and verify a `.css` file is downloaded
+6. Click **Reset View** and confirm overlay + injected fixes + popup result view are cleared
+
+## Resize re-render tests
+
+1. In Options, enable `Auto-rescan on resize`
+2. Run a scan on a responsive page
+3. Resize viewport (desktop width <-> mobile width)
+4. Confirm scan results and overlay rerender with updated findings
+5. Disable `Auto-rescan on resize` and verify resize no longer triggers a new scan
 
 ## Rule Builder tests
 

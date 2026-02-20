@@ -268,13 +268,63 @@
       panel.innerHTML = "";
 
       const header = document.createElement("div");
-      header.innerHTML =
-        '<div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;opacity:0.7">UI Consistency Inspector</div>' +
-        '<div style="display:flex;justify-content:space-between;align-items:end;margin-top:4px">' +
-        '<strong style="font-size:24px;line-height:1">' +
-        summary.consistencyScore +
-        "</strong>" +
-        '<span style="font-size:11px;opacity:0.82">score</span></div>';
+      header.style.display = "grid";
+      header.style.gap = "6px";
+
+      const headingRow = document.createElement("div");
+      headingRow.style.display = "flex";
+      headingRow.style.alignItems = "center";
+      headingRow.style.justifyContent = "space-between";
+      headingRow.style.gap = "8px";
+
+      const label = document.createElement("div");
+      label.style.fontSize = "11px";
+      label.style.letterSpacing = "0.08em";
+      label.style.textTransform = "uppercase";
+      label.style.opacity = "0.75";
+      label.textContent = "UI Consistency Inspector";
+
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.textContent = "Close Overlay";
+      closeButton.style.pointerEvents = "auto";
+      closeButton.style.cursor = "pointer";
+      closeButton.style.border = "1px solid rgba(255,255,255,0.24)";
+      closeButton.style.borderRadius = "999px";
+      closeButton.style.padding = "4px 8px";
+      closeButton.style.background =
+        "linear-gradient(145deg, rgba(255,255,255,0.2), rgba(255,255,255,0.08))";
+      closeButton.style.color = "#f8f7f2";
+      closeButton.style.fontSize = "10px";
+      closeButton.style.fontWeight = "700";
+      closeButton.style.letterSpacing = "0.04em";
+      closeButton.addEventListener("click", function () {
+        hide();
+      });
+
+      headingRow.appendChild(label);
+      headingRow.appendChild(closeButton);
+      header.appendChild(headingRow);
+
+      const scoreRow = document.createElement("div");
+      scoreRow.style.display = "flex";
+      scoreRow.style.justifyContent = "space-between";
+      scoreRow.style.alignItems = "end";
+      scoreRow.style.marginTop = "2px";
+
+      const score = document.createElement("strong");
+      score.style.fontSize = "24px";
+      score.style.lineHeight = "1";
+      score.textContent = String(summary.consistencyScore);
+
+      const scoreLabel = document.createElement("span");
+      scoreLabel.style.fontSize = "11px";
+      scoreLabel.style.opacity = "0.82";
+      scoreLabel.textContent = "score";
+
+      scoreRow.appendChild(score);
+      scoreRow.appendChild(scoreLabel);
+      header.appendChild(scoreRow);
       panel.appendChild(header);
 
       const meta = document.createElement("div");
@@ -314,10 +364,13 @@
       top.forEach(function (finding) {
         const row = document.createElement("div");
         row.style.border = "1px solid rgba(255,255,255,0.12)";
-        row.style.borderLeft = "4px solid " + getSeverityColor(finding.severity);
         row.style.borderRadius = "8px";
         row.style.padding = "6px";
         row.style.background = "rgba(255,255,255,0.04)";
+        row.style.boxShadow =
+          "inset 0 0 0 1px " +
+          getSeverityColor(finding.severity) +
+          "40, 0 6px 14px rgba(0,0,0,0.16)";
 
         const text =
           '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.8">' +
