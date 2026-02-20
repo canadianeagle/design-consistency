@@ -7,7 +7,14 @@
     config: utils.deepClone(root.DEFAULT_CONFIG),
     currentResult: null,
     currentFixCss: "",
-    history: []
+    history: [],
+    progress: {
+      value: 0,
+      stage: "Idle",
+      detail: "Ready for scan",
+      active: false,
+      updatedAt: 0
+    }
   };
 
   const el = {
@@ -30,16 +37,59 @@
     score: document.getElementById("score"),
     findingsTotal: document.getElementById("findingsTotal"),
     elementsTotal: document.getElementById("elementsTotal"),
+    scanLed: document.getElementById("scanLed"),
+    scanProgressBar: document.getElementById("scanProgressBar"),
+    scanProgressValue: document.getElementById("scanProgressValue"),
+    scanStageLabel: document.getElementById("scanStageLabel"),
+    scanDetailLabel: document.getElementById("scanDetailLabel"),
     toggleHighlights: document.getElementById("toggleHighlights"),
     toggleRulers: document.getElementById("toggleRulers"),
     toggleLabels: document.getElementById("toggleLabels"),
     togglePanel: document.getElementById("togglePanel"),
-    severityFilter: document.getElementById("severityFilter")
+    severityFilter: document.getElementById("severityFilter"),
+    maxVisibleFindingsQuick: document.getElementById("maxVisibleFindingsQuick"),
+    maxVisibleFindingsValue: document.getElementById("maxVisibleFindingsValue")
   };
 
   function setStatus(text, isError) {
     el.status.textContent = text;
-    el.status.style.color = isError ? "#ffd7d2" : "#a7bed0";
+    el.status.style.color = isError ? "#ffd1cc" : "#afbad1";
+  }
+
+  function toProgressLabel(stage) {
+    const map = {
+      start: "Boot",
+      prepare: "Prep",
+      collect: "Collect",
+      group: "Group",
+      "css-index": "CSS Index",
+      rules: "Rules",
+      normalize: "Rank",
+      fixes: "Fix Synth",
+      complete: "Complete",
+      done: "Complete",
+      error: "Error"
+    };
+    return map[stage] || stage || "Idle";
+  }
+
+  function setScanProgress(value, stage, detail, active) {
+    const numeric = Number.parseFloat(value);
+    const bounded = Number.isFinite(numeric)
+      ? Math.max(0, Math.min(100, numeric))
+      : 0;
+
+    state.progress.value = bounded;
+    state.progress.stage = toProgressLabel(stage);
+    state.progress.detail = detail || "";
+    state.progress.active = !!active;
+    state.progress.updatedAt = Date.now();
+
+    el.scanProgressBar.style.width = bounded + "%";
+    el.scanProgressValue.textContent = Math.round(bounded) + "%";
+    el.scanStageLabel.textContent = state.progress.stage;
+    el.scanDetailLabel.textContent = state.progress.detail || "Ready for scan";
+    el.scanLed.classList.toggle("active", !!active);
   }
 
   function getActiveTab() {
@@ -89,12 +139,14 @@
   }
 
   function overlayPatchFromUI() {
+    const maxVisible = Number.parseFloat(el.maxVisibleFindingsQuick.value);
     return {
       showHighlights: !!el.toggleHighlights.checked,
       showRulers: !!el.toggleRulers.checked,
       showLabels: !!el.toggleLabels.checked,
       showPanel: !!el.togglePanel.checked,
-      severityFilter: el.severityFilter.value || "all"
+      severityFilter: el.severityFilter.value || "all",
+      maxVisibleFindings: Number.isFinite(maxVisible) ? Math.round(maxVisible) : 250
     };
   }
 
@@ -116,6 +168,12 @@
     el.toggleLabels.checked = !!overlay.showLabels;
     el.togglePanel.checked = !!overlay.showPanel;
     el.severityFilter.value = overlay.severityFilter || "all";
+    const maxVisible =
+      Number.isFinite(Number.parseFloat(overlay.maxVisibleFindings))
+        ? Math.round(Number.parseFloat(overlay.maxVisibleFindings))
+        : 250;
+    el.maxVisibleFindingsQuick.value = String(maxVisible);
+    el.maxVisibleFindingsValue.textContent = String(maxVisible);
   }
 
   function renderSummary(result) {
@@ -266,6 +324,24 @@
         card.appendChild(hint);
       }
 
+      if (
+        finding.metadata &&
+        Array.isArray(finding.metadata.suggestedFixes) &&
+        finding.metadata.suggestedFixes.length
+      ) {
+        const contextual = document.createElement("div");
+        contextual.className = "delta";
+        contextual.textContent =
+          "Context fixes: " +
+          finding.metadata.suggestedFixes
+            .slice(0, 2)
+            .map(function (hint) {
+              return String(hint.property || "") + "=" + String(hint.value || "");
+            })
+            .join(" | ");
+        card.appendChild(contextual);
+      }
+
       el.findingsList.appendChild(card);
     });
   }
@@ -300,6 +376,31 @@
     } catch (error) {
       setStatus("History load failed: " + error.message, true);
     }
+  }
+
+  function normalizeUrlForMatch(value) {
+    if (!value) {
+      return "";
+    }
+    try {
+      const parsed = new URL(value);
+      return parsed.origin + parsed.pathname;
+    } catch (error) {
+      return String(value);
+    }
+  }
+
+  function handleProgressMessage(payload) {
+    const data = payload || {};
+    const activeUrl = normalizeUrlForMatch(state.activeTab && state.activeTab.url);
+    const payloadUrl = normalizeUrlForMatch(data.url);
+    if (activeUrl && payloadUrl && activeUrl !== payloadUrl) {
+      return;
+    }
+
+    const stage = String(data.stage || "").toLowerCase();
+    const active = stage !== "complete" && stage !== "done" && stage !== "error";
+    setScanProgress(data.value, stage, data.detail, active);
   }
 
   function createHistoryCard(entry) {
@@ -420,6 +521,7 @@
     try {
       el.scanBtn.disabled = true;
       el.scanBtn.textContent = "Scanning...";
+      setScanProgress(2, "start", "Initializing scan", true);
       setStatus("Scanning current page. Large pages can take a few seconds.", false);
 
       const overlayPatch = overlayPatchFromUI();
@@ -450,8 +552,10 @@
           packaged.result.summary.consistencyScore,
         false
       );
+      setScanProgress(100, "complete", "Scan complete", false);
     } catch (error) {
       setStatus("Scan failed: " + error.message, true);
+      setScanProgress(100, "error", error.message, false);
     } finally {
       el.scanBtn.disabled = false;
       el.scanBtn.textContent = "Run Granular Scan";
@@ -519,6 +623,7 @@
       state.currentResult = null;
       state.currentFixCss = "";
       applyResultToUI(null);
+      setScanProgress(0, "idle", "View reset", false);
       setStatus("Overlay hidden and page state reset for this tab.", false);
     } catch (error) {
       setStatus("Reset view failed: " + error.message, true);
@@ -594,6 +699,7 @@
     state.activeTab = await getActiveTab();
     await loadConfig();
     setOverlayUI(state.config.overlay);
+    setScanProgress(0, "idle", "Ready for scan", false);
     applyResultToUI(null);
     await loadHistory();
 
@@ -619,6 +725,20 @@
       el.severityFilter
     ].forEach(function (node) {
       node.addEventListener("change", updateOverlay);
+    });
+
+    el.maxVisibleFindingsQuick.addEventListener("input", function () {
+      el.maxVisibleFindingsValue.textContent = String(
+        Math.round(Number.parseFloat(el.maxVisibleFindingsQuick.value) || 0)
+      );
+    });
+    el.maxVisibleFindingsQuick.addEventListener("change", updateOverlay);
+
+    chrome.runtime.onMessage.addListener(function (message) {
+      if (!message || message.type !== "ui-consistency:scan-progress") {
+        return;
+      }
+      handleProgressMessage(message.payload || {});
     });
 
     setStatus("Ready. Run a scan to generate findings and fix CSS.", false);

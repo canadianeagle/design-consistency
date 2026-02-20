@@ -83,11 +83,14 @@ git push origin v0.2.1
 
 1. Open a target page
 2. Run a scan from popup
-3. Confirm overlay boxes and rulers appear
-4. Toggle `Highlights/Rulers/Labels/Panel` and verify behavior
-5. Verify overlay panel includes a **Close Overlay** button and it hides all overlay layers
-6. Verify top findings + category hotspot list populate
-7. Export JSON and confirm payload contains `summary`, `breakdown`, `findings`, and `fixes`
+3. Confirm live progress meter updates stage + percentage while scanning
+4. Confirm overlay boxes and rulers appear
+5. Confirm results include contextual auto-fix CSS
+6. Confirm device-style popup controls (custom toggles/select/range) are interactive
+7. Toggle `Highlights/Rulers/Labels/Panel` and verify behavior
+8. Verify overlay panel includes a **Close Overlay** button and it hides all overlay layers
+9. Verify top findings + category hotspot list populate
+10. Export JSON and confirm payload contains `summary`, `breakdown`, `findings`, and `fixes`
 
 ## Auto-fix workflow tests
 
@@ -136,3 +139,19 @@ git push origin v0.2.1
 1. Validate contrast findings trigger for low-contrast text
 2. Validate touch target findings trigger for small buttons
 3. Validate missing form label findings trigger for unlabeled inputs
+4. Validate missing interactive name findings trigger for icon-only controls
+5. Validate invalid `aria-labelledby` / `aria-describedby` references are detected
+6. Validate `aria-hidden` focusable elements are detected
+7. Validate positive tabindex findings trigger for `tabindex > 0`
+8. Validate missing alt findings trigger for images without `alt`
+
+## Typography hierarchy checks
+
+1. Validate title/body hierarchy findings trigger when title size is too close to body text
+2. Validate title size consistency findings trigger across repeated cards/components
+3. Validate title font-weight drift findings trigger across repeated cards/components
+
+## Branding checks
+
+1. Confirm toolbar icon is visually distinct at 16px in Chrome extension toolbar
+2. Confirm icon assets regenerate correctly via `./scripts/generate_icons.sh`

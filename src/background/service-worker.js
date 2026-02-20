@@ -43,6 +43,7 @@ function summarizeForHistory(payload) {
       expected: finding.expected,
       actual: finding.actual,
       selector: finding.selector,
+      sampleId: finding.sampleId || "",
       groupKey: finding.groupKey,
       rect: finding.rect,
       guides: Array.isArray(finding.guides) ? finding.guides.slice(0, 4) : [],
@@ -56,7 +57,21 @@ function summarizeForHistory(payload) {
           }
         : null,
       htmlSnippet: finding.htmlSnippet || "",
-      observedAt: finding.observedAt
+      observedAt: finding.observedAt,
+      metadata: finding.metadata && typeof finding.metadata === "object"
+        ? {
+            suggestedFixes: Array.isArray(finding.metadata.suggestedFixes)
+              ? finding.metadata.suggestedFixes.slice(0, 4).map(function (hint) {
+                  return {
+                    selector: String(hint.selector || ""),
+                    property: String(hint.property || ""),
+                    value: String(hint.value || ""),
+                    confidence: String(hint.confidence || "")
+                  };
+                })
+              : []
+          }
+        : null
     };
   });
 

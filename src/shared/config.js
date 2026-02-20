@@ -72,7 +72,12 @@
       importantUsageCount: 45,
       selectorComplexity: 4,
       styleEntropy: 0.42,
-      minVarUsageRatio: 0.45
+      minVarUsageRatio: 0.45,
+      cardTitleInsetPx: 8,
+      cardDismissOffsetPx: 4,
+      cardTitleBodyGapPx: 4,
+      titleBodyScaleMin: 1.18,
+      titleWeightDelta: 80
     },
     designTokens: {
       spacingScale: [0, 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 72, 80],

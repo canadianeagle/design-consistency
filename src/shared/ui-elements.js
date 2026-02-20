@@ -51,9 +51,11 @@
           width: 16px;
           height: 16px;
           border-radius: 999px;
-          border: 1px solid rgba(92, 118, 142, 0.46);
-          background: linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(230, 236, 245, 0.72));
-          color: #34516f;
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 45%),
+            linear-gradient(160deg, rgba(74, 210, 197, 0.6), rgba(44, 68, 95, 0.78));
+          color: #f5f8ff;
           font-size: 11px;
           font-weight: 700;
           display: inline-flex;
@@ -131,10 +133,12 @@
         [part="button"] {
           appearance: none;
           width: 100%;
-          border: 1px solid rgba(115, 131, 149, 0.35);
+          border: 1px solid rgba(255, 255, 255, 0.2);
           border-radius: 12px;
-          background: linear-gradient(155deg, rgba(255, 255, 255, 0.86), rgba(240, 246, 255, 0.7));
-          color: #223246;
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.11), transparent 44%),
+            linear-gradient(160deg, rgba(49, 58, 79, 0.78), rgba(28, 31, 43, 0.92));
+          color: #e8edf7;
           font: inherit;
           padding: 8px 10px;
           display: flex;
@@ -146,19 +150,20 @@
           transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
         }
         [part="button"]:hover {
-          border-color: rgba(71, 139, 169, 0.62);
-          box-shadow: 0 8px 18px rgba(44, 88, 121, 0.14);
+          border-color: rgba(96, 223, 210, 0.64);
+          box-shadow: 0 8px 18px rgba(28, 63, 85, 0.32);
         }
         [part="button"]:focus-visible {
           outline: none;
-          border-color: rgba(35, 138, 176, 0.85);
-          box-shadow: 0 0 0 3px rgba(71, 177, 210, 0.26);
+          border-color: rgba(96, 223, 210, 0.85);
+          box-shadow: 0 0 0 3px rgba(96, 223, 210, 0.3);
         }
         [part="track"] {
           width: 34px;
           height: 20px;
           border-radius: 999px;
-          background: linear-gradient(180deg, #c9d7e7, #aebfd1);
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          background: linear-gradient(180deg, #4b5269, #343b50);
           position: relative;
           flex-shrink: 0;
         }
@@ -166,8 +171,8 @@
           width: 14px;
           height: 14px;
           border-radius: 999px;
-          background: #f9fcff;
-          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.24);
+          background: linear-gradient(180deg, #f8fbff, #cad4e5);
+          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
           position: absolute;
           top: 3px;
           left: 3px;
@@ -176,10 +181,10 @@
         [part="text"] {
           font-size: 12px;
           font-weight: 650;
-          color: #1e3347;
+          color: #dce5f8;
         }
         :host([checked]) [part="track"] {
-          background: linear-gradient(150deg, #31c4be, #2f8bb5);
+          background: linear-gradient(150deg, #43d3c4, #2c8cae);
         }
         :host([checked]) [part="thumb"] {
           transform: translateX(14px);
@@ -270,7 +275,7 @@
         [part="head"] {
           display: inline-flex;
           align-items: center;
-          color: #334f68;
+          color: #ced7ec;
           font-size: 12px;
           font-weight: 700;
           letter-spacing: 0.02em;
@@ -284,17 +289,19 @@
           top: 50%;
           transform: translateY(-50%);
           pointer-events: none;
-          color: #33566d;
+          color: #c8d4ee;
           font-size: 13px;
           font-weight: 700;
         }
         ::slotted(select) {
           width: 100%;
           appearance: none;
-          border: 1px solid rgba(100, 124, 147, 0.42);
+          border: 1px solid rgba(255, 255, 255, 0.22);
           border-radius: 10px;
-          background: linear-gradient(150deg, rgba(255, 255, 255, 0.92), rgba(239, 245, 252, 0.72));
-          color: #1f3042;
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.11), transparent 44%),
+            linear-gradient(160deg, rgba(51, 59, 81, 0.82), rgba(31, 35, 48, 0.95));
+          color: #e5ebf7;
           padding: 8px 30px 8px 10px;
           font: inherit;
           font-size: 13px;
@@ -302,12 +309,12 @@
           outline: none;
         }
         ::slotted(select:focus-visible) {
-          border-color: rgba(35, 138, 176, 0.85);
-          box-shadow: 0 0 0 3px rgba(71, 177, 210, 0.26);
+          border-color: rgba(96, 223, 210, 0.85);
+          box-shadow: 0 0 0 3px rgba(96, 223, 210, 0.3);
         }
         ::slotted(select option) {
-          color: #1f3042;
-          background: #f6fbff;
+          color: #e5ebf7;
+          background: #1e2330;
         }
       `;
 

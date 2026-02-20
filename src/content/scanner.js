@@ -56,6 +56,8 @@
     "button, a, input, select, textarea, summary, [role='button'], [role='tab'], [role='menuitem'], [tabindex], [onclick]";
   const FORM_SELECTOR = "input:not([type='hidden']), select, textarea";
   const HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6";
+  const FOCUSABLE_SELECTOR =
+    "a[href], button, input, select, textarea, summary, iframe, [tabindex], [contenteditable='true']";
   const FIXABLE_RULE_PROPERTY_MAP = {
     "spacing-padding-top": "padding-top",
     "spacing-padding-right": "padding-right",
@@ -94,6 +96,22 @@
     "min-width",
     "min-height"
   ]);
+
+  const PROPERTY_TO_METRIC = {
+    "padding-top": "paddingTop",
+    "padding-right": "paddingRight",
+    "padding-bottom": "paddingBottom",
+    "padding-left": "paddingLeft",
+    "margin-top": "marginTop",
+    "margin-right": "marginRight",
+    "margin-bottom": "marginBottom",
+    "margin-left": "marginLeft",
+    "font-size": "fontSize",
+    "line-height": "lineHeight",
+    "letter-spacing": "letterSpacing",
+    "border-radius": "borderRadius",
+    "border-width": "borderWidth"
+  };
 
   function toPageRect(rect) {
     const scrollX = window.scrollX || 0;
@@ -661,6 +679,7 @@
       expected: params.expected,
       actual: params.actual,
       selector: sample.selector,
+      sampleId: sample.id || "",
       groupKey: sample.groupKey,
       tag: sample.tag,
       rect: sample.rect,
@@ -1979,6 +1998,892 @@
     });
   }
 
+  function inferAccessibleName(element) {
+    if (!element || element.nodeType !== 1) {
+      return "";
+    }
+
+    const ariaLabel = (element.getAttribute("aria-label") || "").trim();
+    if (ariaLabel) {
+      return ariaLabel;
+    }
+
+    const labelledBy = (element.getAttribute("aria-labelledby") || "").trim();
+    if (labelledBy) {
+      const text = labelledBy
+        .split(/\s+/)
+        .map(function (idRef) {
+          const ref = document.getElementById(idRef);
+          return ref ? (ref.textContent || "").trim() : "";
+        })
+        .join(" ")
+        .trim();
+      if (text) {
+        return text;
+      }
+    }
+
+    const alt = (element.getAttribute("alt") || "").trim();
+    if (alt) {
+      return alt;
+    }
+
+    const title = (element.getAttribute("title") || "").trim();
+    if (title) {
+      return title;
+    }
+
+    if (element.labels && element.labels.length) {
+      const labelsText = Array.from(element.labels)
+        .map(function (label) {
+          return (label.textContent || "").trim();
+        })
+        .join(" ")
+        .trim();
+      if (labelsText) {
+        return labelsText;
+      }
+    }
+
+    return (element.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
+  function isFocusableElement(element) {
+    if (!element || element.nodeType !== 1) {
+      return false;
+    }
+    if (!element.matches(FOCUSABLE_SELECTOR)) {
+      return false;
+    }
+    if (element.hasAttribute("disabled")) {
+      return false;
+    }
+    const tabIndex = element.getAttribute("tabindex");
+    if (tabIndex != null) {
+      const parsed = Number.parseFloat(tabIndex);
+      return !Number.isFinite(parsed) || parsed >= 0;
+    }
+    return true;
+  }
+
+  function pushInteractiveNameFindings(samples, output) {
+    const sampleByElement = new Map();
+    samples.forEach(function (sample) {
+      sampleByElement.set(sample.element, sample);
+    });
+
+    const inspected = new Set();
+    samples.forEach(function (sample) {
+      if (!sample.isInteractive) {
+        return;
+      }
+
+      const element = sample.element;
+      if (!element || inspected.has(element)) {
+        return;
+      }
+      inspected.add(element);
+
+      const name = inferAccessibleName(element);
+      const hasText = (element.textContent || "").replace(/\s+/g, "").length > 0;
+      if (name) {
+        return;
+      }
+
+      output.push(
+        createFinding({
+          ruleId: "a11y-interactive-name-missing",
+          category: "accessibility",
+          severity: hasText ? "medium" : "high",
+          delta: 1,
+          message: "Interactive control has no accessible name",
+          expected: "Visible label, aria-label, or aria-labelledby",
+          actual: "none",
+          sample: sample
+        })
+      );
+    });
+  }
+
+  function pushAriaHiddenFocusableFindings(samples, output) {
+    const sampleByElement = new Map();
+    samples.forEach(function (sample) {
+      sampleByElement.set(sample.element, sample);
+    });
+
+    Array.from(document.querySelectorAll("[aria-hidden='true']")).forEach(function (element) {
+      if (!isVisible(element, 1)) {
+        return;
+      }
+      if (!isFocusableElement(element)) {
+        return;
+      }
+
+      output.push(
+        createFinding({
+          ruleId: "a11y-aria-hidden-focusable",
+          category: "accessibility",
+          severity: "critical",
+          delta: 1,
+          message: "Focusable element is hidden from assistive technologies",
+          expected: "Remove focusability or remove aria-hidden",
+          actual: "aria-hidden=true + focusable",
+          sample: sampleByElement.get(element) || collectElementSample(element, root.DEFAULT_CONFIG)
+        })
+      );
+    });
+  }
+
+  function pushPositiveTabindexFindings(samples, output) {
+    const sampleByElement = new Map();
+    samples.forEach(function (sample) {
+      sampleByElement.set(sample.element, sample);
+    });
+
+    Array.from(document.querySelectorAll("[tabindex]")).forEach(function (element) {
+      if (!isVisible(element, 1)) {
+        return;
+      }
+      const tabindex = Number.parseFloat(element.getAttribute("tabindex"));
+      if (!Number.isFinite(tabindex) || tabindex <= 0) {
+        return;
+      }
+
+      output.push(
+        createFinding({
+          ruleId: "a11y-positive-tabindex",
+          category: "accessibility",
+          severity: tabindex > 5 ? "high" : "medium",
+          delta: tabindex,
+          message: "Positive tabindex can break logical keyboard order",
+          expected: "tabindex=0 or natural DOM order",
+          actual: String(tabindex),
+          sample: sampleByElement.get(element) || collectElementSample(element, root.DEFAULT_CONFIG)
+        })
+      );
+    });
+  }
+
+  function pushImageAltFindings(samples, output) {
+    const sampleByElement = new Map();
+    samples.forEach(function (sample) {
+      sampleByElement.set(sample.element, sample);
+    });
+
+    Array.from(document.querySelectorAll("img")).forEach(function (image) {
+      if (!isVisible(image, 1)) {
+        return;
+      }
+
+      const alt = image.getAttribute("alt");
+      const role = (image.getAttribute("role") || "").toLowerCase();
+      if (alt != null) {
+        const normalized = alt.trim().toLowerCase();
+        if (
+          normalized &&
+          (normalized === "image" ||
+            normalized === "icon" ||
+            normalized === "photo" ||
+            normalized === "graphic")
+        ) {
+          output.push(
+            createFinding({
+              ruleId: "a11y-image-alt-generic",
+              category: "accessibility",
+              severity: "medium",
+              delta: 1,
+              message: "Image alt text is generic and uninformative",
+              expected: "Meaningful alt text or empty alt for decorative images",
+              actual: alt,
+              sample: sampleByElement.get(image) || collectElementSample(image, root.DEFAULT_CONFIG)
+            })
+          );
+        }
+        return;
+      }
+
+      if (role === "presentation" || role === "none") {
+        return;
+      }
+
+      output.push(
+        createFinding({
+          ruleId: "a11y-image-alt-missing",
+          category: "accessibility",
+          severity: "high",
+          delta: 1,
+          message: "Image is missing alt text",
+          expected: 'alt="" for decorative, or descriptive alt text',
+          actual: "missing",
+          sample: sampleByElement.get(image) || collectElementSample(image, root.DEFAULT_CONFIG)
+        })
+      );
+    });
+  }
+
+  function pushInvalidAriaReferenceFindings(samples, output) {
+    const sampleByElement = new Map();
+    samples.forEach(function (sample) {
+      sampleByElement.set(sample.element, sample);
+    });
+
+    Array.from(document.querySelectorAll("[aria-labelledby], [aria-describedby]")).forEach(
+      function (element) {
+        if (!isVisible(element, 1)) {
+          return;
+        }
+
+        ["aria-labelledby", "aria-describedby"].forEach(function (attributeName) {
+          const value = (element.getAttribute(attributeName) || "").trim();
+          if (!value) {
+            return;
+          }
+
+          const missing = value
+            .split(/\s+/)
+            .filter(Boolean)
+            .filter(function (idRef) {
+              return !document.getElementById(idRef);
+            });
+          if (!missing.length) {
+            return;
+          }
+
+          output.push(
+            createFinding({
+              ruleId: "a11y-invalid-aria-reference",
+              category: "accessibility",
+              severity: "high",
+              delta: missing.length,
+              message: attributeName + " references missing ids",
+              expected: "All ids should exist in DOM",
+              actual: missing.join(", "),
+              sample: sampleByElement.get(element) || collectElementSample(element, root.DEFAULT_CONFIG)
+            })
+          );
+        });
+      }
+    );
+  }
+
+  function pushLandmarkCoverageFindings(samples, output) {
+    const landmarks = [
+      "main",
+      "[role='main']",
+      "header",
+      "[role='banner']",
+      "nav",
+      "[role='navigation']",
+      "footer",
+      "[role='contentinfo']"
+    ];
+
+    const hasMain = !!document.querySelector("main, [role='main']");
+    if (!hasMain) {
+      output.push(
+        createFinding({
+          ruleId: "a11y-landmark-main-missing",
+          category: "accessibility",
+          severity: "medium",
+          delta: 1,
+          message: "Page is missing a main landmark",
+          expected: "<main> or role='main'",
+          actual: "none",
+          sample: samples[0] || buildSyntheticSample()
+        })
+      );
+    }
+
+    const landmarkCount = landmarks.reduce(function (count, selector) {
+      return count + document.querySelectorAll(selector).length;
+    }, 0);
+    if (landmarkCount <= 1) {
+      output.push(
+        createFinding({
+          ruleId: "a11y-landmark-coverage-low",
+          category: "accessibility",
+          severity: "low",
+          delta: 1,
+          message: "Low landmark coverage can reduce navigation efficiency",
+          expected: "Multiple structural landmarks",
+          actual: String(landmarkCount),
+          sample: samples[0] || buildSyntheticSample()
+        })
+      );
+    }
+  }
+
+  function selectorFromElement(element) {
+    return element ? utils.safeSelector(element) : "";
+  }
+
+  function sampleFromElement(element, sampleByElement, config) {
+    return sampleByElement.get(element) || collectElementSample(element, config || root.DEFAULT_CONFIG);
+  }
+
+  function detectCardClusters(samples, config) {
+    const grouped = new Map();
+    samples.forEach(function (sample) {
+      if (!sample || !sample.element) {
+        return;
+      }
+      if (sample.metrics.width < 220 || sample.metrics.height < 90) {
+        return;
+      }
+      if (sample.tag !== "div" && sample.tag !== "article" && sample.tag !== "section" && sample.tag !== "li") {
+        return;
+      }
+      const className = String(sample.element.className || "");
+      const hasCardHint =
+        /card|panel|tile|todo|item|paper|surface|container/i.test(className) ||
+        sample.element.hasAttribute("data-todo-item-type");
+      if (!hasCardHint) {
+        return;
+      }
+
+      const key = sample.groupKey || sample.tag;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key).push(sample);
+    });
+
+    const clusters = Array.from(grouped.values()).filter(function (group) {
+      return group.length >= Math.max(2, config.scanning.minGroupSize - 1);
+    });
+
+    return clusters.slice(0, 24);
+  }
+
+  function findPrimaryTextNodes(cardElement) {
+    if (!cardElement) {
+      return [];
+    }
+    const candidates = Array.from(
+      cardElement.querySelectorAll("h1, h2, h3, h4, h5, h6, p, span, a, button, label")
+    )
+      .filter(function (node) {
+        if (!isVisible(node, 1)) {
+          return false;
+        }
+        const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+        if (text.length < 2) {
+          return false;
+        }
+        if (node.closest("[aria-hidden='true']")) {
+          return false;
+        }
+        return true;
+      })
+      .slice(0, 120);
+    return candidates;
+  }
+
+  function classifyCardComponent(sample) {
+    const element = sample.element;
+    const texts = findPrimaryTextNodes(element);
+    if (!texts.length) {
+      return null;
+    }
+
+    const cardRect = sample.rect;
+    const scored = texts.map(function (node) {
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      const fontSize = utils.parsePx(style.fontSize);
+      const fontWeight = parseFontWeight(style.fontWeight);
+      const topOffset = rect.top + (window.scrollY || 0) - cardRect.top;
+      const headingBonus = /^h[1-6]$/i.test(node.tagName) ? 6 : 0;
+      const score = fontSize * 2 + fontWeight * 0.02 + headingBonus - topOffset * 0.06;
+      return {
+        node: node,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        topOffset: topOffset,
+        rect: toPageRect(rect),
+        textLength: (node.textContent || "").trim().length,
+        score: score
+      };
+    });
+
+    scored.sort(function (a, b) {
+      return b.score - a.score;
+    });
+
+    const title = scored[0];
+    if (!title) {
+      return null;
+    }
+
+    const body = scored
+      .filter(function (entry) {
+        return (
+          entry.node !== title.node &&
+          entry.topOffset >= title.topOffset &&
+          entry.textLength >= 24 &&
+          entry.fontSize <= title.fontSize + 2
+        );
+      })
+      .sort(function (a, b) {
+        return a.topOffset - b.topOffset;
+      })[0];
+
+    const actionCandidates = Array.from(
+      element.querySelectorAll("button, a[href], [role='button']")
+    )
+      .filter(function (node) {
+        if (!isVisible(node, 1)) {
+          return false;
+        }
+        const label = (node.textContent || "").replace(/\s+/g, " ").trim();
+        return label.length >= 2 && label.length <= 40;
+      })
+      .map(function (node) {
+        return {
+          node: node,
+          rect: toPageRect(node.getBoundingClientRect())
+        };
+      });
+
+    const action = actionCandidates.sort(function (a, b) {
+      return a.rect.top - b.rect.top;
+    })[0];
+
+    const dismissButton = Array.from(element.querySelectorAll("button, [role='button']")).find(
+      function (node) {
+        const label = (node.getAttribute("aria-label") || "").toLowerCase();
+        return /dismiss|close|remove/.test(label);
+      }
+    );
+
+    const icon = Array.from(element.querySelectorAll("img, svg"))
+      .filter(function (node) {
+        if (!isVisible(node, 1)) {
+          return false;
+        }
+        const rect = node.getBoundingClientRect();
+        return rect.width >= 14 && rect.width <= 110 && rect.height >= 14 && rect.height <= 110;
+      })
+      .sort(function (a, b) {
+        const rectA = a.getBoundingClientRect();
+        const rectB = b.getBoundingClientRect();
+        const topA = rectA.top + (window.scrollY || 0);
+        const topB = rectB.top + (window.scrollY || 0);
+        if (topA !== topB) {
+          return topA - topB;
+        }
+        return rectA.left - rectB.left;
+      })[0];
+
+    return {
+      sample: sample,
+      cardElement: element,
+      cardRect: cardRect,
+      title: title,
+      body: body || null,
+      action: action || null,
+      dismissButton: dismissButton || null,
+      icon: icon || null
+    };
+  }
+
+  function buildInsetFixHints(component, targetInset) {
+    if (!component || !component.title || !Number.isFinite(targetInset)) {
+      return [];
+    }
+
+    const targetElement = component.title.node.parentElement || component.title.node;
+    const targetSelector = selectorFromElement(targetElement);
+    if (!targetSelector) {
+      return [];
+    }
+
+    const cardRect = component.cardElement.getBoundingClientRect();
+    const targetRect = targetElement.getBoundingClientRect();
+    const currentInset = targetRect.left - cardRect.left;
+    const delta = targetInset - currentInset;
+    if (Math.abs(delta) < 0.75) {
+      return [];
+    }
+
+    const style = window.getComputedStyle(targetElement);
+    const marginLeft = utils.parsePx(style.marginLeft);
+    const paddingLeft = utils.parsePx(style.paddingLeft);
+    const preferMargin = marginLeft > 0.2 || paddingLeft < 0.2;
+    const property = preferMargin ? "margin-left" : "padding-left";
+    const current = preferMargin ? marginLeft : paddingLeft;
+    const nextValue = Math.max(0, current + delta);
+
+    return [
+      {
+        selector: targetSelector,
+        property: property,
+        value: utils.toFixed(nextValue, 2) + "px",
+        confidence: "context-high"
+      }
+    ];
+  }
+
+  function buildDismissFixHints(component, topTarget, rightTarget) {
+    if (!component || !component.dismissButton) {
+      return [];
+    }
+
+    const buttonSelector = selectorFromElement(component.dismissButton);
+    const cardSelector = selectorFromElement(component.cardElement);
+    if (!buttonSelector || !cardSelector) {
+      return [];
+    }
+
+    const style = window.getComputedStyle(component.cardElement);
+    const hints = [];
+    if (style.position === "static") {
+      hints.push({
+        selector: cardSelector,
+        property: "position",
+        value: "relative",
+        confidence: "context-medium"
+      });
+    }
+
+    hints.push(
+      {
+        selector: buttonSelector,
+        property: "position",
+        value: "absolute",
+        confidence: "context-high"
+      },
+      {
+        selector: buttonSelector,
+        property: "top",
+        value: utils.toFixed(Math.max(0, topTarget), 2) + "px",
+        confidence: "context-high"
+      },
+      {
+        selector: buttonSelector,
+        property: "right",
+        value: utils.toFixed(Math.max(0, rightTarget), 2) + "px",
+        confidence: "context-high"
+      }
+    );
+
+    return hints;
+  }
+
+  function pushCardLayoutAndTypographyFindings(samples, config, output) {
+    const includeLayout = !!(config.rules.checkLayoutAdvanced || config.rules.checkAlignment);
+    const includeTypography = !!(
+      config.rules.checkTypographyAdvanced || config.rules.checkTypography
+    );
+    if (!includeLayout && !includeTypography) {
+      return;
+    }
+
+    const clusters = detectCardClusters(samples, config);
+    const cardInsetTolerance = Number.isFinite(config.thresholds.cardTitleInsetPx)
+      ? config.thresholds.cardTitleInsetPx
+      : 8;
+    const dismissTolerance = Number.isFinite(config.thresholds.cardDismissOffsetPx)
+      ? config.thresholds.cardDismissOffsetPx
+      : 4;
+    const titleBodyGapTolerance = Number.isFinite(config.thresholds.cardTitleBodyGapPx)
+      ? config.thresholds.cardTitleBodyGapPx
+      : 4;
+    const minTitleScale = Number.isFinite(config.thresholds.titleBodyScaleMin)
+      ? config.thresholds.titleBodyScaleMin
+      : 1.18;
+    const titleWeightTolerance = Number.isFinite(config.thresholds.titleWeightDelta)
+      ? config.thresholds.titleWeightDelta
+      : 80;
+
+    clusters.forEach(function (cluster) {
+      const components = cluster
+        .map(function (sample) {
+          return classifyCardComponent(sample);
+        })
+        .filter(Boolean);
+
+      if (components.length < 2) {
+        return;
+      }
+
+      if (includeLayout) {
+        const titleInsets = components
+          .map(function (component) {
+            return component.title.rect.left - component.cardRect.left;
+          })
+          .filter(function (value) {
+            return Number.isFinite(value);
+          });
+        const baselineTitleInset = utils.median(titleInsets);
+
+        if (Number.isFinite(baselineTitleInset)) {
+          components.forEach(function (component) {
+            const actualInset = component.title.rect.left - component.cardRect.left;
+            const delta = Math.abs(actualInset - baselineTitleInset);
+            if (delta <= Math.max(cardInsetTolerance, config.thresholds.alignmentPx * 0.8)) {
+              return;
+            }
+
+            output.push(
+              createFinding({
+                ruleId: "layout-card-title-anchor-left",
+                category: "layout",
+                severity: safeSeverityFromDelta(
+                  delta,
+                  Math.max(cardInsetTolerance, config.thresholds.alignmentPx)
+                ),
+                delta: delta,
+                message:
+                  "Card title horizontal anchor is inconsistent with peer cards",
+                expected: utils.toFixed(baselineTitleInset, 1) + "px from card left",
+                actual: utils.toFixed(actualInset, 1) + "px from card left",
+                sample: component.sample,
+                metadata: {
+                  suggestedFixes: buildInsetFixHints(component, baselineTitleInset)
+                }
+              })
+            );
+          });
+        }
+      }
+
+      if (includeLayout) {
+        const dismissOffsets = components
+          .filter(function (component) {
+            return !!component.dismissButton;
+          })
+          .map(function (component) {
+            const buttonRect = toPageRect(component.dismissButton.getBoundingClientRect());
+            return {
+              component: component,
+              top: buttonRect.top - component.cardRect.top,
+              right: component.cardRect.right - buttonRect.right
+            };
+          });
+        if (dismissOffsets.length >= 2) {
+          const baselineTop = utils.median(
+            dismissOffsets.map(function (entry) {
+              return entry.top;
+            })
+          );
+          const baselineRight = utils.median(
+            dismissOffsets.map(function (entry) {
+              return entry.right;
+            })
+          );
+
+          dismissOffsets.forEach(function (entry) {
+            const delta = Math.max(
+              Math.abs(entry.top - baselineTop),
+              Math.abs(entry.right - baselineRight)
+            );
+            if (delta <= dismissTolerance) {
+              return;
+            }
+
+            output.push(
+              createFinding({
+                ruleId: "layout-dismiss-button-offset",
+                category: "layout",
+                severity: delta > dismissTolerance * 2.4 ? "high" : "medium",
+                delta: delta,
+                message: "Dismiss/close control offset is inconsistent across cards",
+                expected:
+                  "top " +
+                  utils.toFixed(baselineTop, 1) +
+                  "px, right " +
+                  utils.toFixed(baselineRight, 1) +
+                  "px",
+                actual:
+                  "top " +
+                  utils.toFixed(entry.top, 1) +
+                  "px, right " +
+                  utils.toFixed(entry.right, 1) +
+                  "px",
+                sample: entry.component.sample,
+                metadata: {
+                  suggestedFixes: buildDismissFixHints(
+                    entry.component,
+                    baselineTop,
+                    baselineRight
+                  )
+                }
+              })
+            );
+          });
+        }
+      }
+
+      if (includeLayout) {
+        const titleBodyGaps = components
+          .filter(function (component) {
+            return !!component.body;
+          })
+          .map(function (component) {
+            return {
+              component: component,
+              gap: component.body.rect.top - component.title.rect.bottom
+            };
+          })
+          .filter(function (entry) {
+            return Number.isFinite(entry.gap);
+          });
+
+        if (titleBodyGaps.length >= 2) {
+          const baselineGap = utils.median(
+            titleBodyGaps.map(function (entry) {
+              return entry.gap;
+            })
+          );
+          titleBodyGaps.forEach(function (entry) {
+            const delta = Math.abs(entry.gap - baselineGap);
+            if (delta <= Math.max(titleBodyGapTolerance, config.thresholds.whitespacePx * 0.45)) {
+              return;
+            }
+
+            const suggestedFixes = entry.component.body
+              ? [
+                  {
+                    selector: selectorFromElement(entry.component.body.node),
+                    property: "margin-top",
+                    value: utils.toFixed(Math.max(0, baselineGap), 2) + "px",
+                    confidence: "context-high"
+                  }
+                ]
+              : [];
+
+            output.push(
+              createFinding({
+                ruleId: "layout-card-title-body-gap",
+                category: "layout",
+                severity: safeSeverityFromDelta(
+                  delta,
+                  Math.max(titleBodyGapTolerance, config.thresholds.whitespacePx * 0.5)
+                ),
+                delta: delta,
+                message: "Card title-to-body whitespace rhythm is inconsistent",
+                expected: utils.toFixed(baselineGap, 1) + "px",
+                actual: utils.toFixed(entry.gap, 1) + "px",
+                sample: entry.component.sample,
+                metadata: {
+                  suggestedFixes: suggestedFixes
+                }
+              })
+            );
+          });
+        }
+      }
+
+      if (includeTypography) {
+        const titleSizeValues = components
+          .map(function (component) {
+            return component.title.fontSize;
+          })
+          .filter(function (value) {
+            return Number.isFinite(value) && value > 0;
+          });
+        const baselineTitleSize = utils.median(titleSizeValues);
+        const baselineTitleWeight = utils.median(
+          components.map(function (component) {
+            return component.title.fontWeight;
+          })
+        );
+
+        components.forEach(function (component) {
+          if (component.body) {
+            const ratio = component.title.fontSize / Math.max(1, component.body.fontSize);
+            if (ratio < minTitleScale) {
+              const suggestedTitleSize = Math.max(
+                component.body.fontSize * 1.22,
+                component.title.fontSize + 1
+              );
+              output.push(
+                createFinding({
+                  ruleId: "typography-hierarchy-title-scale",
+                  category: "typography",
+                  severity: ratio < minTitleScale - 0.1 ? "high" : "medium",
+                  delta: minTitleScale - ratio,
+                  message: "Title text is too close in size to body text",
+                  expected: ">= " + utils.toFixed(minTitleScale, 2) + "x body size",
+                  actual: utils.toFixed(ratio, 2) + "x",
+                  sample: component.sample,
+                  metadata: {
+                    suggestedFixes: [
+                      {
+                        selector: selectorFromElement(component.title.node),
+                        property: "font-size",
+                        value: utils.toFixed(suggestedTitleSize, 2) + "px",
+                        confidence: "context-medium"
+                      }
+                    ]
+                  }
+                })
+              );
+            }
+          }
+
+          if (
+            Number.isFinite(baselineTitleSize) &&
+            Math.abs(component.title.fontSize - baselineTitleSize) >
+              Math.max(1.2, config.thresholds.fontSizePx)
+          ) {
+            output.push(
+              createFinding({
+                ruleId: "typography-hierarchy-title-consistency",
+                category: "typography",
+                severity: "medium",
+                delta: Math.abs(component.title.fontSize - baselineTitleSize),
+                message: "Title size is inconsistent across similar cards",
+                expected: utils.toFixed(baselineTitleSize, 2) + "px",
+                actual: utils.toFixed(component.title.fontSize, 2) + "px",
+                sample: component.sample,
+                metadata: {
+                  suggestedFixes: [
+                    {
+                      selector: selectorFromElement(component.title.node),
+                      property: "font-size",
+                      value: utils.toFixed(baselineTitleSize, 2) + "px",
+                      confidence: "context-medium"
+                    }
+                  ]
+                }
+              })
+            );
+          }
+
+          if (
+            Number.isFinite(baselineTitleWeight) &&
+            Math.abs(component.title.fontWeight - baselineTitleWeight) > titleWeightTolerance
+          ) {
+            output.push(
+              createFinding({
+                ruleId: "typography-hierarchy-title-weight",
+                category: "typography",
+                severity: "low",
+                delta: Math.abs(component.title.fontWeight - baselineTitleWeight),
+                message: "Title font-weight drifts from peer hierarchy",
+                expected: String(Math.round(baselineTitleWeight)),
+                actual: String(Math.round(component.title.fontWeight)),
+                sample: component.sample,
+                metadata: {
+                  suggestedFixes: [
+                    {
+                      selector: selectorFromElement(component.title.node),
+                      property: "font-weight",
+                      value: String(Math.round(baselineTitleWeight)),
+                      confidence: "context-low"
+                    }
+                  ]
+                }
+              })
+            );
+          }
+        });
+      }
+    });
+  }
+
   function pushTextOverflowFindings(samples, output) {
     samples.forEach(function (sample) {
       if (sample.textLength < 8) {
@@ -2856,6 +3761,142 @@
     return /^#([0-9a-f]{3,8})$/i.test(text) || /^rgba?\(/i.test(text) || /^hsla?\(/i.test(text);
   }
 
+  function metricValues(samples, metric) {
+    return (samples || [])
+      .map(function (sample) {
+        return sample && sample.metrics ? sample.metrics[metric] : null;
+      })
+      .filter(function (value) {
+        return Number.isFinite(value);
+      });
+  }
+
+  function siblingSamples(context, sample) {
+    if (!context || !sample || !sample.element || !sample.element.parentElement) {
+      return [];
+    }
+    const siblingGroup = context.samplesByParent.get(sample.element.parentElement);
+    return Array.isArray(siblingGroup) ? siblingGroup : [];
+  }
+
+  function nearestScaleForProperty(property, value, config) {
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+
+    const tokens = config && config.designTokens ? config.designTokens : {};
+    let scale = null;
+    if (/padding|margin/.test(property)) {
+      scale = tokens.spacingScale;
+    } else if (property === "border-radius") {
+      scale = tokens.radiusScale;
+    } else if (property === "font-size") {
+      scale = tokens.fontScale;
+    }
+
+    if (!Array.isArray(scale) || !scale.length) {
+      return null;
+    }
+    return utils.nearestValue(value, scale);
+  }
+
+  function contextualNumericTarget(property, finding, sample, context, config) {
+    const metric = PROPERTY_TO_METRIC[property];
+    if (!metric) {
+      return null;
+    }
+
+    const expectedPx = parsePixelValue(finding.expected);
+    const expectedNum = expectedPx ? Number.parseFloat(expectedPx) : null;
+    const groupValues = metricValues(
+      context && context.samplesByGroup.get(sample.groupKey),
+      metric
+    );
+    const siblingValues = metricValues(siblingSamples(context, sample), metric);
+
+    const siblingMedian = utils.median(siblingValues);
+    const groupMedian = utils.median(groupValues);
+    let target = Number.isFinite(expectedNum) ? expectedNum : null;
+
+    if (Number.isFinite(siblingMedian)) {
+      target = siblingMedian;
+    } else if (Number.isFinite(groupMedian)) {
+      target = groupMedian;
+    }
+
+    if (!Number.isFinite(target)) {
+      return null;
+    }
+
+    const snapped = nearestScaleForProperty(property, target, config);
+    if (snapped && snapped.delta <= Math.max(1.4, config.thresholds.tokenOffscalePx * 1.5)) {
+      target = snapped.value;
+    }
+
+    return formatCssNumber(target) + "px";
+  }
+
+  function contextualColorTarget(property, finding, sample, context) {
+    if (!sample || !context) {
+      const expectedColor = String(finding.expected || "").trim();
+      return isColorLike(expectedColor) ? expectedColor : null;
+    }
+
+    const metric = property === "background-color" ? "backgroundColor" : "color";
+    const siblingVals = siblingSamples(context, sample)
+      .map(function (peer) {
+        return peer.metrics[metric];
+      })
+      .filter(function (value) {
+        return isColorLike(value);
+      });
+    if (siblingVals.length >= 2) {
+      return utils.mode(siblingVals);
+    }
+
+    const groupVals = (context.samplesByGroup.get(sample.groupKey) || [])
+      .map(function (peer) {
+        return peer.metrics[metric];
+      })
+      .filter(function (value) {
+        return isColorLike(value);
+      });
+    if (groupVals.length >= 2) {
+      return utils.mode(groupVals);
+    }
+
+    const expectedColor = String(finding.expected || "").trim();
+    return isColorLike(expectedColor) ? expectedColor : null;
+  }
+
+  function contextualFontFamilyTarget(sample, finding, context) {
+    if (!sample || !context) {
+      const expectedFont = String(finding.expected || "").trim();
+      return expectedFont || null;
+    }
+
+    const siblingVals = siblingSamples(context, sample)
+      .map(function (peer) {
+        return peer.metrics.fontFamily;
+      })
+      .filter(Boolean);
+    if (siblingVals.length >= 2) {
+      return utils.mode(siblingVals);
+    }
+
+    const groupVals = (context.samplesByGroup.get(sample.groupKey) || [])
+      .map(function (peer) {
+        return peer.metrics.fontFamily;
+      })
+      .filter(Boolean);
+    if (groupVals.length >= 2) {
+      return utils.mode(groupVals);
+    }
+
+    const expectedFont = String(finding.expected || "").trim();
+    return expectedFont || null;
+  }
+
   function resolveFixProperty(finding) {
     const ruleId = String(finding.ruleId || "");
     if (FIXABLE_RULE_PROPERTY_MAP[ruleId]) {
@@ -2873,7 +3914,7 @@
     return "";
   }
 
-  function resolveFixValue(property, finding) {
+  function resolveFixValue(property, finding, sample, context, config) {
     if (!property) {
       return null;
     }
@@ -2888,16 +3929,17 @@
     }
 
     if (property === "font-family") {
-      const expectedFont = String(finding.expected || "").trim();
-      return expectedFont || null;
+      return contextualFontFamilyTarget(sample, finding, context);
     }
 
     if (property === "color" || property === "background-color") {
-      const expectedColor = String(finding.expected || "").trim();
-      return isColorLike(expectedColor) ? expectedColor : null;
+      return contextualColorTarget(property, finding, sample, context);
     }
 
     if (PIXEL_PROPERTY_SET.has(property)) {
+      if (sample && context && config) {
+        return contextualNumericTarget(property, finding, sample, context, config);
+      }
       return parsePixelValue(finding.expected);
     }
 
@@ -2933,10 +3975,71 @@
     };
   }
 
-  function buildFixCandidatesForFinding(finding) {
+  function buildFixContextModel(samples, grouped) {
+    const model = {
+      samplesById: new Map(),
+      samplesByGroup: new Map(),
+      samplesByParent: new Map()
+    };
+
+    samples.forEach(function (sample) {
+      model.samplesById.set(sample.id, sample);
+      const parent = sample.element ? sample.element.parentElement : null;
+      if (parent) {
+        if (!model.samplesByParent.has(parent)) {
+          model.samplesByParent.set(parent, []);
+        }
+        model.samplesByParent.get(parent).push(sample);
+      }
+    });
+
+    if (grouped && typeof grouped.forEach === "function") {
+      grouped.forEach(function (groupSamples, key) {
+        model.samplesByGroup.set(key, groupSamples);
+      });
+    }
+
+    return model;
+  }
+
+  function sampleForFinding(finding, context) {
+    if (!finding || !context || !context.samplesById) {
+      return null;
+    }
+    if (finding.sampleId && context.samplesById.has(finding.sampleId)) {
+      return context.samplesById.get(finding.sampleId);
+    }
+    return null;
+  }
+
+  function buildSuggestedFixCandidates(finding) {
+    const hints =
+      finding &&
+      finding.metadata &&
+      Array.isArray(finding.metadata.suggestedFixes)
+        ? finding.metadata.suggestedFixes
+        : [];
+    return hints
+      .map(function (hint) {
+        return createFixCandidate(
+          hint.selector,
+          hint.property,
+          hint.value,
+          finding
+        );
+      })
+      .filter(Boolean);
+  }
+
+  function buildFixCandidatesForFinding(finding, context, config) {
     const candidates = [];
     const selector = String(finding.selector || "").trim();
     const ruleId = String(finding.ruleId || "");
+    const sample = sampleForFinding(finding, context);
+
+    buildSuggestedFixCandidates(finding).forEach(function (candidate) {
+      candidates.push(candidate);
+    });
 
     if (ruleId === "a11y-touch-target-size") {
       const target = parseTouchTarget(finding.expected);
@@ -2992,7 +4095,7 @@
     }
 
     const property = resolveFixProperty(finding);
-    const value = resolveFixValue(property, finding);
+    const value = resolveFixValue(property, finding, sample, context, config);
     const singleCandidate = createFixCandidate(selector, property, value, finding);
     if (singleCandidate) {
       candidates.push(singleCandidate);
@@ -3032,11 +4135,11 @@
     return output;
   }
 
-  function collectFixCandidates(findings) {
+  function collectFixCandidates(findings, context, config) {
     const output = [];
 
     findings.forEach(function (finding) {
-      buildFixCandidatesForFinding(finding).forEach(function (candidate) {
+      buildFixCandidatesForFinding(finding, context, config).forEach(function (candidate) {
         output.push(candidate);
       });
     });
@@ -3181,7 +4284,7 @@
     return lines.join("\n").trim();
   }
 
-  function buildFixPackage(findings, config) {
+  function buildFixPackage(findings, config, contextModel) {
     const defaults = root.DEFAULT_CONFIG && root.DEFAULT_CONFIG.fixes
       ? root.DEFAULT_CONFIG.fixes
       : {
@@ -3203,7 +4306,7 @@
 
     const maxRules = Number.parseFloat(fixConfig.maxRules);
     const limit = Number.isFinite(maxRules) && maxRules > 0 ? Math.round(maxRules) : 140;
-    const candidates = collectFixCandidates(findings);
+    const candidates = collectFixCandidates(findings, contextModel, config);
     const rules = mergeFixCandidates(candidates, limit);
     const cssText = buildFixCssText(
       rules,
@@ -3218,10 +4321,25 @@
     };
   }
 
-  function runScan(config) {
+  function runScan(config, onProgress) {
     const startedAt = performance.now();
+    const reportProgress = function (value, stage, detail) {
+      if (typeof onProgress !== "function") {
+        return;
+      }
+      const bounded = Math.max(0, Math.min(100, Number.parseFloat(value) || 0));
+      onProgress({
+        value: bounded,
+        stage: stage || "",
+        detail: detail || "",
+        at: utils.nowIso()
+      });
+    };
 
+    reportProgress(4, "prepare", "Preparing scan context");
     const elements = collectCandidates(config);
+    reportProgress(18, "collect", "Collecting computed styles");
+
     const samples = elements.map(function (element) {
       return collectElementSample(element, config);
     });
@@ -3234,12 +4352,15 @@
       grouped.get(sample.groupKey).push(sample);
     });
 
+    reportProgress(28, "group", "Building element groups");
     const analyzableGroups = Array.from(grouped.values()).filter(function (group) {
       return group.length >= config.scanning.minGroupSize;
     });
 
+    reportProgress(36, "css-index", "Indexing stylesheet sources");
     const cssSourceIndex = config.scanning.traceCSS ? buildStyleRuleIndex() : null;
 
+    reportProgress(44, "rules", "Running rule families");
     const findings = [];
 
     runGroupRules(analyzableGroups, config, findings, cssSourceIndex);
@@ -3259,12 +4380,22 @@
       pushNegativeSpacingFindings(samples, findings);
     }
 
+    if (config.rules.checkLayoutAdvanced || config.rules.checkTypographyAdvanced || config.rules.checkTypography) {
+      pushCardLayoutAndTypographyFindings(samples, config, findings);
+    }
+
     if (config.rules.checkAccessibility) {
       pushContrastFindings(samples, config, findings);
       pushTapTargetFindings(samples, config, findings);
       pushHeadingHierarchyFindings(samples, config, findings);
       pushFormLabelFindings(samples, findings);
       pushDuplicateIdFindings(samples, findings);
+      pushInteractiveNameFindings(samples, findings);
+      pushImageAltFindings(samples, findings);
+      pushAriaHiddenFocusableFindings(samples, findings);
+      pushPositiveTabindexFindings(samples, findings);
+      pushInvalidAriaReferenceFindings(samples, findings);
+      pushLandmarkCoverageFindings(samples, findings);
     }
 
     if (config.rules.checkInteraction) {
@@ -3294,6 +4425,7 @@
       customRulesMeta = pushCustomRuleFindings(samples, config, findings);
     }
 
+    reportProgress(72, "normalize", "Deduplicating and ranking findings");
     const severityOrder = {
       critical: 4,
       high: 3,
@@ -3315,9 +4447,13 @@
 
     const limitedFindings = deduped.slice(0, config.reporting.maxFindings);
     const summary = scoreFromFindings(limitedFindings);
-    const fixes = buildFixPackage(limitedFindings, config);
+    const fixContextModel = buildFixContextModel(samples, grouped);
+
+    reportProgress(88, "fixes", "Synthesizing contextual CSS fixes");
+    const fixes = buildFixPackage(limitedFindings, config, fixContextModel);
 
     const elapsedMs = performance.now() - startedAt;
+    reportProgress(100, "complete", "Scan complete");
 
     return {
       meta: {

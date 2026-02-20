@@ -7,17 +7,41 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <main class="shell">
+    <main class="device-shell">
+      <section class="screw screw-top-left" aria-hidden="true"></section>
+      <section class="screw screw-top-right" aria-hidden="true"></section>
+      <section class="screw screw-bottom-left" aria-hidden="true"></section>
+      <section class="screw screw-bottom-right" aria-hidden="true"></section>
+
       <header class="hero">
-        <img class="hero-logo" src="../../assets/icons/icon-128.png" alt="UI Consistency Investigator logo" />
-        <div>
-          <p class="eyebrow">Design Forensics</p>
+        <img class="hero-logo" src="../../assets/icons/icon-128.png" alt="UI Consistency Investigator icon" />
+        <div class="hero-copy">
+          <p class="eyebrow">Device Console</p>
           <h1>UI Consistency Investigator</h1>
           <p class="subtext">
-            Scan this page, visualize issues, apply generated CSS fixes, and export improvements to your codebase.
+            Deep scan + contextual auto-fixes + accessibility and typography diagnostics.
           </p>
         </div>
       </header>
+
+      <section class="panel-block scan-panel">
+        <section class="scan-row">
+          <span class="scan-led" id="scanLed" aria-hidden="true"></span>
+          <div>
+            <h2 data-tip-target="true" data-tip="Live scan progress from content script stages (collect, rules, fixes).">Scan Progress</h2>
+            <p class="hint">Includes style indexing, rule execution, and contextual fix synthesis.</p>
+          </div>
+          <span class="scan-value" id="scanProgressValue">0%</span>
+        </section>
+
+        <section class="meter-track" aria-label="Scan progress meter">
+          <section id="scanProgressBar" class="meter-fill"></section>
+        </section>
+        <section class="meter-detail">
+          <span id="scanStageLabel">Idle</span>
+          <span id="scanDetailLabel">Ready for scan</span>
+        </section>
+      </section>
 
       <section class="control-grid">
         <button id="scanBtn" class="scan-btn" title="Run a full scan of the current tab">Run Granular Scan</button>
@@ -26,8 +50,8 @@
       </section>
 
       <section class="panel-block">
-        <h2 data-tip-target="true" data-tip="Use these toggles to control what appears on the page overlay.">Overlay Controls</h2>
-        <p class="hint">These controls update the overlay in real time without rescanning.</p>
+        <h2 data-tip-target="true" data-tip="Controls what renders in the in-page overlay.">Overlay Controls</h2>
+        <p class="hint">Adjust diagnostics without rerunning the scan.</p>
 
         <section class="toggles">
           <label data-tip="Draw color-coded boxes around problematic elements."><input type="checkbox" id="toggleHighlights" checked /> Highlights</label>
@@ -46,6 +70,14 @@
               <option value="medium">Medium</option>
               <option value="low">Low</option>
             </select>
+          </label>
+
+          <label class="range-wrap" data-tip="Maximum findings displayed in on-page overlay list and highlights.">
+            Overlay Density
+            <section class="range-control">
+              <input id="maxVisibleFindingsQuick" type="range" min="40" max="420" step="10" />
+              <output id="maxVisibleFindingsValue" for="maxVisibleFindingsQuick">250</output>
+            </section>
           </label>
         </section>
       </section>
@@ -67,28 +99,34 @@
 
       <section class="panel-block">
         <section class="results-head">
-          <h2 data-tip-target="true" data-tip="These fixes are generated from findings and can be injected into the current page.">Auto CSS Fixes</h2>
+          <h2 data-tip-target="true" data-tip="Context-aware patch candidates inferred from peers, siblings, and token scales.">Auto CSS Fixes</h2>
           <span id="fixRuleCount" class="chip">0 rules</span>
         </section>
-        <p class="hint">Review generated fixes before applying. You can inject for quick validation, copy, or download for source control.</p>
+        <p class="hint">Inject for validation, then copy or download to apply in source control.</p>
 
-        <div class="actions grid-actions">
+        <section class="actions grid-actions">
           <button id="applyFixesBtn" class="ghost-btn">Apply Fixes</button>
           <button id="copyFixesBtn" class="ghost-btn">Copy CSS</button>
           <button id="downloadFixesBtn" class="ghost-btn">Download CSS</button>
           <button id="clearFixesBtn" class="ghost-btn">Clear Injected</button>
-        </div>
+        </section>
 
-        <textarea id="fixCssPreview" class="code-preview" rows="8" readonly placeholder="Run a scan to generate CSS fixes."></textarea>
+        <textarea
+          id="fixCssPreview"
+          class="code-preview"
+          rows="8"
+          readonly
+          placeholder="Run a scan to generate contextual CSS fixes."
+        ></textarea>
       </section>
 
       <section class="panel-block">
         <section class="results-head">
           <h2>Top Findings</h2>
-          <div class="actions">
+          <section class="actions">
             <button id="exportBtn" class="ghost-btn">Export JSON</button>
             <button id="refreshHistoryBtn" class="ghost-btn">Refresh History</button>
-          </div>
+          </section>
         </section>
         <section id="findingsList" class="findings-list"></section>
       </section>

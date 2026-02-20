@@ -12,6 +12,23 @@
   let resizeListenerBound = false;
   let fixStyleElement = null;
 
+  function emitScanProgress(progress) {
+    const payload = utils.deepMerge(
+      {
+        value: 0,
+        stage: "",
+        detail: "",
+        url: window.location.href,
+        timestamp: utils.nowIso()
+      },
+      progress || {}
+    );
+    chrome.runtime.sendMessage({
+      type: "ui-consistency:scan-progress",
+      payload: payload
+    });
+  }
+
   function shouldOverlayBeVisible(overlaySettings) {
     if (!overlaySettings) {
       return false;
@@ -114,7 +131,14 @@
 
     scanInFlight = true;
     try {
-      const scanResult = root.scanner.runScan(activeConfig);
+      emitScanProgress({
+        value: 1,
+        stage: "start",
+        detail: "Initializing scan"
+      });
+      const scanResult = root.scanner.runScan(activeConfig, function (progress) {
+        emitScanProgress(progress);
+      });
       const packaged = withMeta(scanResult, activeConfig);
       lastResult = packaged;
 
@@ -125,7 +149,20 @@
         overlayController.hide();
       }
 
+      emitScanProgress({
+        value: 100,
+        stage: "done",
+        detail: "Scan completed"
+      });
+
       return packaged;
+    } catch (error) {
+      emitScanProgress({
+        value: 100,
+        stage: "error",
+        detail: String(error && error.message ? error.message : error)
+      });
+      throw error;
     } finally {
       scanInFlight = false;
     }

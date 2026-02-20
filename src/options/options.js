@@ -81,6 +81,11 @@
     { id: "selectorComplexity", path: "thresholds.selectorComplexity" },
     { id: "styleEntropy", path: "thresholds.styleEntropy" },
     { id: "minVarUsageRatio", path: "thresholds.minVarUsageRatio" },
+    { id: "cardTitleInsetPx", path: "thresholds.cardTitleInsetPx" },
+    { id: "cardDismissOffsetPx", path: "thresholds.cardDismissOffsetPx" },
+    { id: "cardTitleBodyGapPx", path: "thresholds.cardTitleBodyGapPx" },
+    { id: "titleBodyScaleMin", path: "thresholds.titleBodyScaleMin" },
+    { id: "titleWeightDelta", path: "thresholds.titleWeightDelta" },
     { id: "maxMatchedElements", path: "customRules.maxMatchedElements" },
     { id: "fixMaxRules", path: "fixes.maxRules" },
     { id: "maxVisibleFindings", path: "overlay.maxVisibleFindings" },
@@ -140,7 +145,7 @@
 
   function setStatus(text, isError) {
     status.textContent = text;
-    status.style.color = isError ? "#b83a31" : "#55656f";
+    status.style.color = isError ? "#ffd1cc" : "#b5bfd5";
   }
 
   function getPath(obj, path) {

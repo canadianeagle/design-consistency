@@ -9,9 +9,13 @@ A configurable Chrome Extension (Manifest V3) that scans a live page for UI/desi
 - Rule Builder UI for custom rules (no code required)
 - JSON DSL custom rules (`assert` + `consistency`) for advanced teams
 - Overlay diagnostics: issue boxes, guide lines/rulers, severity filtering, score panel
-- Auto-fix engine: generates CSS patch candidates from findings, injects into page, copy/download CSS
+- Retro device-style UI with live scan progress meter and stage-by-stage scan telemetry
+- Context-aware auto-fix engine: uses peer groups, sibling context, and design-token scales
+- Auto-fix actions: inject into page, copy CSS, download patch file
 - View controls: reset view, clear injected fixes, and close overlay directly from the in-page panel
 - Responsive re-analysis: optional auto-rescan and re-render on viewport resize
+- Expanded accessibility checks inspired by axe-style auditing (names, tabindex, aria refs, landmarks, image alt quality)
+- Advanced typography hierarchy checks for card/title/body structure consistency
 - Configurable thresholds, grouping strategy, selectors, and reporting output
 - Scan history and replay overlay for the same page URL
 
@@ -49,6 +53,19 @@ You can:
    - **Download CSS** to save a patch file.
    - **Clear Injected** to remove runtime fix CSS from the page.
 4. If needed, use **Reset View** to clear overlays and scan state for the current tab.
+
+### Contextual Fix Formula (high level)
+
+For each fixable finding, the engine computes target CSS values by prioritizing:
+1. Sibling baseline (same parent context)
+2. Group baseline (same component fingerprint)
+3. Rule baseline from finding expectation
+4. Optional token snap (spacing/radius/type scales) when close to configured design tokens
+
+Specialized layout rules also provide targeted fix hints for:
+- Card title left inset alignment
+- Dismiss button top/right anchoring
+- Card title-to-body whitespace rhythm
 
 ## Project Structure
 
