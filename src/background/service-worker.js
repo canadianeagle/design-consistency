@@ -31,6 +31,21 @@ function summarizeForHistory(payload) {
     : [];
 
   const rawFixes = payload.result && payload.result.fixes ? payload.result.fixes : null;
+  const rawFrameworks = payload.result && payload.result.frameworks
+    ? payload.result.frameworks
+    : null;
+  const sanitizedFrameworks = rawFrameworks
+    ? {
+        primary: rawFrameworks.primary || null,
+        detected: Array.isArray(rawFrameworks.detected)
+          ? rawFrameworks.detected.slice(0, 8)
+          : [],
+        caveats: Array.isArray(rawFrameworks.caveats)
+          ? rawFrameworks.caveats.slice(0, 10)
+          : [],
+        stats: rawFrameworks.stats || {}
+      }
+    : null;
 
   const sanitizedFindings = rawFindings.slice(0, 220).map(function (finding) {
     return {
@@ -79,6 +94,96 @@ function summarizeForHistory(payload) {
     ? {
         generatedAt: rawFixes.generatedAt || payload.scannedAt,
         cssText: String(rawFixes.cssText || "").slice(0, 200000),
+        frameworkProfile: rawFixes.frameworkProfile
+          ? {
+              primary: rawFixes.frameworkProfile.primary || null,
+              detected: Array.isArray(rawFixes.frameworkProfile.detected)
+                ? rawFixes.frameworkProfile.detected.slice(0, 8)
+                : [],
+              caveats: Array.isArray(rawFixes.frameworkProfile.caveats)
+                ? rawFixes.frameworkProfile.caveats.slice(0, 8)
+                : [],
+              stats: rawFixes.frameworkProfile.stats || {}
+            }
+          : null,
+        recommendations:
+          rawFixes.recommendations &&
+          typeof rawFixes.recommendations === "object"
+            ? {
+                generatedAt: rawFixes.recommendations.generatedAt || payload.scannedAt,
+                total: Number.isFinite(Number.parseFloat(rawFixes.recommendations.total))
+                  ? Number.parseFloat(rawFixes.recommendations.total)
+                  : 0,
+                channelDistribution: Array.isArray(rawFixes.recommendations.channelDistribution)
+                  ? rawFixes.recommendations.channelDistribution
+                      .slice(0, 12)
+                      .map(function (entry) {
+                        return {
+                          channel: String(entry.channel || "scoped-css"),
+                          usage: Number.isFinite(Number.parseFloat(entry.usage))
+                            ? Number.parseFloat(entry.usage)
+                            : 0
+                        };
+                      })
+                  : [],
+                top: Array.isArray(rawFixes.recommendations.top)
+                  ? rawFixes.recommendations.top.slice(0, 80).map(function (rec) {
+                      return {
+                        id: String(rec.id || ""),
+                        selector: String(rec.selector || ""),
+                        severity: String(rec.severity || "medium"),
+                        priority: Number.isFinite(Number.parseFloat(rec.priority))
+                          ? Number.parseFloat(rec.priority)
+                          : 0,
+                        issueCount: Number.isFinite(Number.parseFloat(rec.issueCount))
+                          ? Number.parseFloat(rec.issueCount)
+                          : 0,
+                        confidence: Number.isFinite(Number.parseFloat(rec.confidence))
+                          ? Number.parseFloat(rec.confidence)
+                          : 0,
+                        stability: Number.isFinite(Number.parseFloat(rec.stability))
+                          ? Number.parseFloat(rec.stability)
+                          : 0,
+                        risk: String(rec.risk || "medium"),
+                        riskScore: Number.isFinite(Number.parseFloat(rec.riskScore))
+                          ? Number.parseFloat(rec.riskScore)
+                          : 0,
+                        framework: String(rec.framework || "generic"),
+                        channels: Array.isArray(rec.channels)
+                          ? rec.channels.slice(0, 6).map(function (channel) {
+                              return String(channel || "scoped-css");
+                            })
+                          : [],
+                        declarations: Array.isArray(rec.declarations)
+                          ? rec.declarations.slice(0, 8).map(function (declaration) {
+                              return {
+                                property: String(declaration.property || ""),
+                                value: String(declaration.value || ""),
+                                sourceRuleId: String(declaration.sourceRuleId || ""),
+                                severity: String(declaration.severity || "medium"),
+                                confidence: Number.isFinite(
+                                  Number.parseFloat(declaration.confidence)
+                                )
+                                  ? Number.parseFloat(declaration.confidence)
+                                  : 0,
+                                stability: Number.isFinite(
+                                  Number.parseFloat(declaration.stability)
+                                )
+                                  ? Number.parseFloat(declaration.stability)
+                                  : 0,
+                                channel: String(declaration.channel || "scoped-css"),
+                                framework: String(declaration.framework || "generic"),
+                                rationale: String(declaration.rationale || "")
+                              };
+                            })
+                          : [],
+                        guidance: String(rec.guidance || ""),
+                        caveat: String(rec.caveat || "")
+                      };
+                    })
+                  : []
+              }
+            : { generatedAt: payload.scannedAt, total: 0, channelDistribution: [], top: [] },
         rules: Array.isArray(rawFixes.rules)
           ? rawFixes.rules.slice(0, 220).map(function (rule, index) {
               return {
@@ -88,6 +193,16 @@ function summarizeForHistory(payload) {
                   ? Number.parseFloat(rule.issueCount)
                   : 0,
                 maxSeverity: String(rule.maxSeverity || "medium"),
+                channels: Array.isArray(rule.channels)
+                  ? rule.channels.slice(0, 6).map(function (channel) {
+                      return String(channel || "scoped-css");
+                    })
+                  : [],
+                frameworks: Array.isArray(rule.frameworks)
+                  ? rule.frameworks.slice(0, 6).map(function (framework) {
+                      return String(framework || "generic");
+                    })
+                  : [],
                 declarations: Array.isArray(rule.declarations)
                   ? rule.declarations.slice(0, 12).map(function (declaration) {
                       return {
@@ -95,7 +210,16 @@ function summarizeForHistory(payload) {
                         value: String(declaration.value || ""),
                         sourceRuleId: String(declaration.sourceRuleId || ""),
                         severity: String(declaration.severity || "medium"),
-                        message: String(declaration.message || "")
+                        message: String(declaration.message || ""),
+                        confidence: Number.isFinite(Number.parseFloat(declaration.confidence))
+                          ? Number.parseFloat(declaration.confidence)
+                          : 0,
+                        stability: Number.isFinite(Number.parseFloat(declaration.stability))
+                          ? Number.parseFloat(declaration.stability)
+                          : 0,
+                        channel: String(declaration.channel || "scoped-css"),
+                        framework: String(declaration.framework || "generic"),
+                        rationale: String(declaration.rationale || "")
                       };
                     })
                   : []
@@ -106,6 +230,13 @@ function summarizeForHistory(payload) {
     : {
         generatedAt: payload.scannedAt,
         cssText: "",
+        frameworkProfile: null,
+        recommendations: {
+          generatedAt: payload.scannedAt,
+          total: 0,
+          channelDistribution: [],
+          top: []
+        },
         rules: []
       };
 
@@ -130,6 +261,7 @@ function summarizeForHistory(payload) {
       meta: payload.result.meta,
       summary: payload.result.summary,
       breakdown: payload.result.breakdown || { byCategory: {}, byRule: {} },
+      frameworks: sanitizedFrameworks,
       findings: sanitizedFindings,
       fixes: sanitizedFixes
     }

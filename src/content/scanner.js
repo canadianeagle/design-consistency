@@ -113,6 +113,73 @@
     "border-width": "borderWidth"
   };
 
+  const FRAMEWORK_LIBRARY_MAP = {
+    mui: {
+      id: "mui",
+      name: "Material UI",
+      family: "component-library",
+      caveat:
+        "MUI hash classes (for example .css-*) are unstable across builds. Prefer .Mui* slot classes or theme styleOverrides.",
+      preferredChannels: ["theme-styleOverrides", "sx-token", "scoped-css"]
+    },
+    tailwind: {
+      id: "tailwind",
+      name: "Tailwind CSS",
+      family: "utility-first",
+      caveat:
+        "Tailwind fixes should generally be className utility updates or token updates rather than broad stylesheet overrides.",
+      preferredChannels: ["utility-class", "design-token", "scoped-css"]
+    },
+    bootstrap: {
+      id: "bootstrap",
+      name: "Bootstrap",
+      family: "component-library",
+      caveat:
+        "Bootstrap components often rely on CSS variables and utility classes. Prefer variable/utility adjustments before direct component overrides.",
+      preferredChannels: ["css-variable", "utility-class", "scoped-css"]
+    },
+    chakra: {
+      id: "chakra",
+      name: "Chakra UI",
+      family: "component-library",
+      caveat:
+        "Chakra fixes are safer via style props or theme extension, not direct CSS against generated classes.",
+      preferredChannels: ["theme-extension", "style-prop", "scoped-css"]
+    },
+    antd: {
+      id: "antd",
+      name: "Ant Design",
+      family: "component-library",
+      caveat:
+        "Ant Design recommends token/theming APIs first; raw .ant-* overrides can be brittle without scope guards.",
+      preferredChannels: ["theme-token", "component-token", "scoped-css"]
+    },
+    mantine: {
+      id: "mantine",
+      name: "Mantine",
+      family: "component-library",
+      caveat:
+        "Mantine styles are commonly controlled via props/styles API. Prefer theme-level overrides or component-level style props.",
+      preferredChannels: ["theme-override", "styles-prop", "scoped-css"]
+    },
+    emotion: {
+      id: "emotion",
+      name: "Emotion",
+      family: "css-in-js",
+      caveat:
+        "Emotion generated class names can be build-sensitive. Prefer stable parent selectors or component-level style definitions.",
+      preferredChannels: ["component-style", "stable-scope-css"]
+    },
+    "styled-components": {
+      id: "styled-components",
+      name: "Styled Components",
+      family: "css-in-js",
+      caveat:
+        "Styled-components class hashes can vary by build. Prefer editing styled definitions or using stable wrapper hooks.",
+      preferredChannels: ["component-style", "stable-scope-css"]
+    }
+  };
+
   function toPageRect(rect) {
     const scrollX = window.scrollX || 0;
     const scrollY = window.scrollY || 0;
@@ -423,6 +490,329 @@
     }
 
     return filtered;
+  }
+
+  function classTokenInventory(samples, sampleLimit) {
+    const limit = Number.isFinite(sampleLimit) ? sampleLimit : 1500;
+    const classTokens = [];
+    let totalElements = 0;
+
+    for (let i = 0; i < samples.length; i += 1) {
+      if (totalElements >= limit) {
+        break;
+      }
+      const sample = samples[i];
+      if (!sample || !sample.element || !sample.element.classList) {
+        totalElements += 1;
+        continue;
+      }
+      const classes = Array.from(sample.element.classList).slice(0, 32);
+      classes.forEach(function (token) {
+        const normalized = String(token || "").trim();
+        if (normalized) {
+          classTokens.push(normalized);
+        }
+      });
+      totalElements += 1;
+    }
+
+    return {
+      tokens: classTokens,
+      elementsScanned: totalElements
+    };
+  }
+
+  function countTokens(tokens, matcher) {
+    let count = 0;
+    for (let i = 0; i < tokens.length; i += 1) {
+      if (matcher(tokens[i])) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  function countDomMatches(selector, cap) {
+    const max = Number.isFinite(cap) ? cap : 1000;
+    try {
+      const nodes = document.querySelectorAll(selector);
+      return Math.min(nodes.length, max);
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  function sourceInventoryFromNodeList(nodeList, field) {
+    return Array.from(nodeList || [])
+      .map(function (node) {
+        return (node && node[field] ? String(node[field]) : "").toLowerCase();
+      })
+      .filter(Boolean);
+  }
+
+  function sourceInventoryFromStyleSheets() {
+    return Array.from(document.styleSheets || [])
+      .map(function (sheet) {
+        return (sheet && sheet.href ? String(sheet.href) : "").toLowerCase();
+      })
+      .filter(Boolean);
+  }
+
+  function customPropertyPrefixCount(prefix) {
+    const style = window.getComputedStyle(document.documentElement);
+    let count = 0;
+    for (let i = 0; i < style.length; i += 1) {
+      const prop = style[i];
+      if (prop && String(prop).toLowerCase().startsWith(prefix)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  function pushFrameworkDetection(output, id, score, evidence, extra) {
+    if (score < 14) {
+      return;
+    }
+
+    const framework = FRAMEWORK_LIBRARY_MAP[id] || {
+      id: id,
+      name: id,
+      family: "unknown",
+      caveat: "",
+      preferredChannels: ["scoped-css"]
+    };
+
+    const confidence = utils.clamp(score / 100, 0, 0.99);
+    output.push({
+      id: framework.id,
+      name: framework.name,
+      family: framework.family,
+      score: utils.toFixed(score, 1),
+      confidence: utils.toFixed(confidence, 2),
+      evidence: (evidence || []).slice(0, 8),
+      caveat: framework.caveat,
+      preferredChannels: framework.preferredChannels || ["scoped-css"],
+      metadata: extra || null
+    });
+  }
+
+  function detectFrameworks(samples) {
+    const inventory = classTokenInventory(samples, 1800);
+    const tokens = inventory.tokens;
+    const styleSources = sourceInventoryFromStyleSheets();
+    const scriptSources = sourceInventoryFromNodeList(
+      document.querySelectorAll("script[src]"),
+      "src"
+    );
+
+    const output = [];
+
+    const muiClassCount = countTokens(tokens, function (token) {
+      return /^Mui[A-Z]/.test(token);
+    });
+    const muiRootLikeCount = countTokens(tokens, function (token) {
+      return /^Mui[A-Z][A-Za-z0-9-]+-root$/.test(token);
+    });
+    const muiEmotionHashCount = countTokens(tokens, function (token) {
+      return /^css-[a-z0-9]{4,}$/i.test(token);
+    });
+    const muiDataCount = countDomMatches("[data-mui-test], [data-mui-color-scheme]", 160);
+    const muiSourceHints = styleSources.filter(function (source) {
+      return source.includes("mui");
+    }).length;
+    const muiScore =
+      Math.min(58, muiClassCount * 1.2) +
+      Math.min(18, muiRootLikeCount * 1.4) +
+      Math.min(12, muiEmotionHashCount * 0.16) +
+      Math.min(8, muiDataCount * 2) +
+      Math.min(12, muiSourceHints * 5);
+    pushFrameworkDetection(
+      output,
+      "mui",
+      muiScore,
+      [
+        "Mui classes: " + muiClassCount,
+        "Mui root slots: " + muiRootLikeCount,
+        "Emotion hash classes: " + muiEmotionHashCount,
+        "MUI data attrs: " + muiDataCount,
+        "Stylesheet hints: " + muiSourceHints
+      ],
+      {
+        classCount: muiClassCount,
+        rootSlots: muiRootLikeCount
+      }
+    );
+
+    const tailwindUtilityCount = countTokens(tokens, function (token) {
+      return /^(sm:|md:|lg:|xl:|2xl:|hover:|focus:|dark:|disabled:|group-hover:|peer-)?(p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml|w|h|min-w|max-w|min-h|max-h|text|bg|font|leading|tracking|rounded|shadow|ring|border|grid|flex|items|justify|content|place|gap|space-x|space-y|object|overflow|z|top|left|right|bottom|inset|translate|scale|rotate|opacity)-/.test(
+        token
+      );
+    });
+    const tailwindVariantCount = countTokens(tokens, function (token) {
+      return /^(sm:|md:|lg:|xl:|2xl:|hover:|focus:|dark:|group-hover:|peer-)/.test(token);
+    });
+    const tailwindArbitraryCount = countTokens(tokens, function (token) {
+      return token.includes("[") && token.includes("]");
+    });
+    const twCustomProps = customPropertyPrefixCount("--tw-");
+    const twSourceHints = styleSources
+      .concat(scriptSources)
+      .filter(function (source) {
+        return source.includes("tailwind");
+      }).length;
+    const tailwindScore =
+      Math.min(58, tailwindUtilityCount * 0.45) +
+      Math.min(14, tailwindVariantCount * 0.8) +
+      Math.min(12, tailwindArbitraryCount * 0.9) +
+      Math.min(12, twCustomProps * 1.5) +
+      Math.min(10, twSourceHints * 6);
+    pushFrameworkDetection(
+      output,
+      "tailwind",
+      tailwindScore,
+      [
+        "Utility tokens: " + tailwindUtilityCount,
+        "Variant tokens: " + tailwindVariantCount,
+        "Arbitrary value tokens: " + tailwindArbitraryCount,
+        "Custom properties (--tw-*): " + twCustomProps,
+        "Source hints: " + twSourceHints
+      ],
+      {
+        utilityTokens: tailwindUtilityCount
+      }
+    );
+
+    const bootstrapClassCount = countTokens(tokens, function (token) {
+      return /^(container(-fluid)?|row|col(-[a-z]+)?-\d+|btn(-[a-z]+)?|navbar(-[a-z]+)?|card|modal|dropdown(-menu)?|form-control)$/.test(
+        token
+      );
+    });
+    const bsSourceHints = styleSources
+      .concat(scriptSources)
+      .filter(function (source) {
+        return source.includes("bootstrap");
+      }).length;
+    const bootstrapScore =
+      Math.min(72, bootstrapClassCount * 1.1) + Math.min(16, bsSourceHints * 7);
+    pushFrameworkDetection(output, "bootstrap", bootstrapScore, [
+      "Bootstrap classes: " + bootstrapClassCount,
+      "Source hints: " + bsSourceHints
+    ]);
+
+    const chakraClassCount = countTokens(tokens, function (token) {
+      return /^chakra-/.test(token);
+    });
+    const chakraProps = customPropertyPrefixCount("--chakra-");
+    const chakraSourceHints = styleSources
+      .concat(scriptSources)
+      .filter(function (source) {
+        return source.includes("chakra");
+      }).length;
+    const chakraScore =
+      Math.min(64, chakraClassCount * 1.5) +
+      Math.min(18, chakraProps * 1.7) +
+      Math.min(12, chakraSourceHints * 6);
+    pushFrameworkDetection(output, "chakra", chakraScore, [
+      "Chakra classes: " + chakraClassCount,
+      "Custom properties (--chakra-*): " + chakraProps,
+      "Source hints: " + chakraSourceHints
+    ]);
+
+    const antdClassCount = countTokens(tokens, function (token) {
+      return /^ant-/.test(token);
+    });
+    const antdSourceHints = styleSources
+      .concat(scriptSources)
+      .filter(function (source) {
+        return source.includes("antd") || source.includes("ant-design");
+      }).length;
+    const antdScore =
+      Math.min(72, antdClassCount * 1.2) + Math.min(14, antdSourceHints * 7);
+    pushFrameworkDetection(output, "antd", antdScore, [
+      "Ant classes: " + antdClassCount,
+      "Source hints: " + antdSourceHints
+    ]);
+
+    const mantineClassCount = countTokens(tokens, function (token) {
+      return /^mantine-/.test(token);
+    });
+    const mantineProps = customPropertyPrefixCount("--mantine-");
+    const mantineSourceHints = styleSources
+      .concat(scriptSources)
+      .filter(function (source) {
+        return source.includes("mantine");
+      }).length;
+    const mantineScore =
+      Math.min(70, mantineClassCount * 1.2) +
+      Math.min(12, mantineProps * 1.5) +
+      Math.min(10, mantineSourceHints * 6);
+    pushFrameworkDetection(output, "mantine", mantineScore, [
+      "Mantine classes: " + mantineClassCount,
+      "Custom properties (--mantine-*): " + mantineProps,
+      "Source hints: " + mantineSourceHints
+    ]);
+
+    const emotionHashCount = countTokens(tokens, function (token) {
+      return /^css-[a-z0-9]{4,}$/i.test(token);
+    });
+    const emotionDataCount = countDomMatches("[data-emotion]", 200);
+    const emotionSourceHints = scriptSources
+      .concat(styleSources)
+      .filter(function (source) {
+        return source.includes("emotion");
+      }).length;
+    const emotionScore =
+      Math.min(52, emotionHashCount * 0.18) +
+      Math.min(26, emotionDataCount * 1.5) +
+      Math.min(14, emotionSourceHints * 5);
+    pushFrameworkDetection(output, "emotion", emotionScore, [
+      "Emotion hash classes: " + emotionHashCount,
+      "data-emotion nodes: " + emotionDataCount,
+      "Source hints: " + emotionSourceHints
+    ]);
+
+    const scClassCount = countTokens(tokens, function (token) {
+      return /^sc-[a-z0-9]{3,}$/i.test(token);
+    });
+    const scDataCount = countDomMatches("[data-styled], [data-styled-version]", 200);
+    const scSourceHints = scriptSources
+      .concat(styleSources)
+      .filter(function (source) {
+        return source.includes("styled-components");
+      }).length;
+    const scScore =
+      Math.min(56, scClassCount * 0.7) +
+      Math.min(26, scDataCount * 1.5) +
+      Math.min(12, scSourceHints * 6);
+    pushFrameworkDetection(output, "styled-components", scScore, [
+      "Styled-components classes: " + scClassCount,
+      "Styled data attrs: " + scDataCount,
+      "Source hints: " + scSourceHints
+    ]);
+
+    output.sort(function (a, b) {
+      return b.score - a.score;
+    });
+
+    const primary = output.length ? output[0] : null;
+    const caveats = output.slice(0, 4).map(function (framework) {
+      return {
+        framework: framework.name,
+        caveat: framework.caveat,
+        preferredChannels: framework.preferredChannels
+      };
+    });
+
+    return {
+      primary: primary,
+      detected: output,
+      caveats: caveats,
+      stats: {
+        classTokensScanned: tokens.length,
+        sampledElements: inventory.elementsScanned
+      }
+    };
   }
 
   function splitSelectors(selectorText) {
@@ -2487,26 +2877,25 @@
     };
   }
 
-  function buildInsetFixHints(component, targetInset) {
-    if (!component || !component.title || !Number.isFinite(targetInset)) {
-      return [];
+  function buildElementInsetHint(cardElement, element, targetInset, confidence) {
+    if (!cardElement || !element || !Number.isFinite(targetInset)) {
+      return null;
     }
 
-    const targetElement = component.title.node.parentElement || component.title.node;
-    const targetSelector = selectorFromElement(targetElement);
-    if (!targetSelector) {
-      return [];
+    const selector = selectorFromElement(element);
+    if (!selector) {
+      return null;
     }
 
-    const cardRect = component.cardElement.getBoundingClientRect();
-    const targetRect = targetElement.getBoundingClientRect();
-    const currentInset = targetRect.left - cardRect.left;
+    const cardRect = cardElement.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    const currentInset = elementRect.left - cardRect.left;
     const delta = targetInset - currentInset;
     if (Math.abs(delta) < 0.75) {
-      return [];
+      return null;
     }
 
-    const style = window.getComputedStyle(targetElement);
+    const style = window.getComputedStyle(element);
     const marginLeft = utils.parsePx(style.marginLeft);
     const paddingLeft = utils.parsePx(style.paddingLeft);
     const preferMargin = marginLeft > 0.2 || paddingLeft < 0.2;
@@ -2514,12 +2903,85 @@
     const current = preferMargin ? marginLeft : paddingLeft;
     const nextValue = Math.max(0, current + delta);
 
+    return {
+      selector: selector,
+      property: property,
+      value: utils.toFixed(nextValue, 2) + "px",
+      confidence: confidence || "context-high"
+    };
+  }
+
+  function buildInsetFixHints(component, targetInset) {
+    if (!component || !component.title || !Number.isFinite(targetInset)) {
+      return [];
+    }
+
+    const targetElement = component.title.node.parentElement || component.title.node;
+    const hint = buildElementInsetHint(
+      component.cardElement,
+      targetElement,
+      targetInset,
+      "context-high"
+    );
+    return hint ? [hint] : [];
+  }
+
+  function buildBodyActionAnchorFixHints(component, targetInset) {
+    if (!component || !Number.isFinite(targetInset)) {
+      return [];
+    }
+
+    const hints = [];
+    if (component.body && component.body.node) {
+      const bodyHint = buildElementInsetHint(
+        component.cardElement,
+        component.body.node,
+        targetInset,
+        "context-high"
+      );
+      if (bodyHint) {
+        hints.push(bodyHint);
+      }
+    }
+    if (component.action && component.action.node) {
+      const actionHint = buildElementInsetHint(
+        component.cardElement,
+        component.action.node,
+        targetInset,
+        "context-medium"
+      );
+      if (actionHint) {
+        hints.push(actionHint);
+      }
+    }
+    return hints.slice(0, 3);
+  }
+
+  function buildIconGapFixHints(component, targetGap) {
+    if (!component || !component.icon || !component.title || !Number.isFinite(targetGap)) {
+      return [];
+    }
+    const iconSelector = selectorFromElement(component.icon);
+    if (!iconSelector) {
+      return [];
+    }
+
+    const iconRect = component.icon.getBoundingClientRect();
+    const titleRect = component.title.node.getBoundingClientRect();
+    const currentGap = titleRect.left - iconRect.right;
+    const delta = targetGap - currentGap;
+    if (Math.abs(delta) < 0.75) {
+      return [];
+    }
+
+    const iconStyle = window.getComputedStyle(component.icon);
+    const marginRight = utils.parsePx(iconStyle.marginRight);
     return [
       {
-        selector: targetSelector,
-        property: property,
-        value: utils.toFixed(nextValue, 2) + "px",
-        confidence: "context-high"
+        selector: iconSelector,
+        property: "margin-right",
+        value: utils.toFixed(Math.max(0, marginRight + delta), 2) + "px",
+        confidence: "context-medium"
       }
     ];
   }
@@ -2607,45 +3069,46 @@
         return;
       }
 
-      if (includeLayout) {
-        const titleInsets = components
-          .map(function (component) {
-            return component.title.rect.left - component.cardRect.left;
-          })
-          .filter(function (value) {
-            return Number.isFinite(value);
-          });
-        const baselineTitleInset = utils.median(titleInsets);
-
-        if (Number.isFinite(baselineTitleInset)) {
-          components.forEach(function (component) {
-            const actualInset = component.title.rect.left - component.cardRect.left;
-            const delta = Math.abs(actualInset - baselineTitleInset);
-            if (delta <= Math.max(cardInsetTolerance, config.thresholds.alignmentPx * 0.8)) {
-              return;
-            }
-
-            output.push(
-              createFinding({
-                ruleId: "layout-card-title-anchor-left",
-                category: "layout",
-                severity: safeSeverityFromDelta(
-                  delta,
-                  Math.max(cardInsetTolerance, config.thresholds.alignmentPx)
-                ),
-                delta: delta,
-                message:
-                  "Card title horizontal anchor is inconsistent with peer cards",
-                expected: utils.toFixed(baselineTitleInset, 1) + "px from card left",
-                actual: utils.toFixed(actualInset, 1) + "px from card left",
-                sample: component.sample,
-                metadata: {
-                  suggestedFixes: buildInsetFixHints(component, baselineTitleInset)
-                }
+      const baselineTitleInset = includeLayout
+        ? utils.median(
+            components
+              .map(function (component) {
+                return component.title.rect.left - component.cardRect.left;
               })
-            );
-          });
-        }
+              .filter(function (value) {
+                return Number.isFinite(value);
+              })
+          )
+        : null;
+
+      if (includeLayout && Number.isFinite(baselineTitleInset)) {
+        components.forEach(function (component) {
+          const actualInset = component.title.rect.left - component.cardRect.left;
+          const delta = Math.abs(actualInset - baselineTitleInset);
+          if (delta <= Math.max(cardInsetTolerance, config.thresholds.alignmentPx * 0.8)) {
+            return;
+          }
+
+          output.push(
+            createFinding({
+              ruleId: "layout-card-title-anchor-left",
+              category: "layout",
+              severity: safeSeverityFromDelta(
+                delta,
+                Math.max(cardInsetTolerance, config.thresholds.alignmentPx)
+              ),
+              delta: delta,
+              message:
+                "Card title horizontal anchor is inconsistent with peer cards",
+              expected: utils.toFixed(baselineTitleInset, 1) + "px from card left",
+              actual: utils.toFixed(actualInset, 1) + "px from card left",
+              sample: component.sample,
+              metadata: {
+                suggestedFixes: buildInsetFixHints(component, baselineTitleInset)
+              }
+            })
+          );
+        });
       }
 
       if (includeLayout) {
@@ -2768,6 +3231,93 @@
                 sample: entry.component.sample,
                 metadata: {
                   suggestedFixes: suggestedFixes
+                }
+              })
+            );
+          });
+        }
+      }
+
+      if (includeLayout && Number.isFinite(baselineTitleInset)) {
+        const anchorTolerance = Math.max(cardInsetTolerance * 0.75, config.thresholds.alignmentPx * 0.7);
+        components.forEach(function (component) {
+          const anchors = [];
+          if (component.body && Number.isFinite(component.body.rect.left)) {
+            anchors.push(component.body.rect.left - component.cardRect.left);
+          }
+          if (component.action && Number.isFinite(component.action.rect.left)) {
+            anchors.push(component.action.rect.left - component.cardRect.left);
+          }
+          if (!anchors.length) {
+            return;
+          }
+
+          const localAnchor = utils.median(anchors);
+          const delta = Math.abs(localAnchor - baselineTitleInset);
+          if (delta <= anchorTolerance) {
+            return;
+          }
+
+          output.push(
+            createFinding({
+              ruleId: "layout-card-content-column-anchor",
+              category: "layout",
+              severity: safeSeverityFromDelta(delta, anchorTolerance),
+              delta: delta,
+              message: "Body/action column is not aligned with the title anchor",
+              expected: utils.toFixed(baselineTitleInset, 1) + "px from card left",
+              actual: utils.toFixed(localAnchor, 1) + "px from card left",
+              sample: component.sample,
+              metadata: {
+                suggestedFixes: buildBodyActionAnchorFixHints(component, baselineTitleInset)
+              }
+            })
+          );
+        });
+      }
+
+      if (includeLayout) {
+        const iconGaps = components
+          .filter(function (component) {
+            return !!component.icon && !!component.title;
+          })
+          .map(function (component) {
+            const iconRect = component.icon.getBoundingClientRect();
+            const titleRect = component.title.node.getBoundingClientRect();
+            return {
+              component: component,
+              gap: titleRect.left - iconRect.right
+            };
+          })
+          .filter(function (entry) {
+            return Number.isFinite(entry.gap) && entry.gap >= -8;
+          });
+
+        if (iconGaps.length >= 2) {
+          const baselineGap = utils.median(
+            iconGaps.map(function (entry) {
+              return entry.gap;
+            })
+          );
+          const iconGapTolerance = Math.max(4, config.thresholds.alignmentPx * 0.55);
+          iconGaps.forEach(function (entry) {
+            const delta = Math.abs(entry.gap - baselineGap);
+            if (delta <= iconGapTolerance) {
+              return;
+            }
+
+            output.push(
+              createFinding({
+                ruleId: "layout-card-icon-text-gutter",
+                category: "layout",
+                severity: safeSeverityFromDelta(delta, iconGapTolerance),
+                delta: delta,
+                message: "Icon-to-title gutter drifts from peer card rhythm",
+                expected: utils.toFixed(baselineGap, 1) + "px gap",
+                actual: utils.toFixed(entry.gap, 1) + "px gap",
+                sample: entry.component.sample,
+                metadata: {
+                  suggestedFixes: buildIconGapFixHints(entry.component, baselineGap)
                 }
               })
             );
@@ -3779,7 +4329,80 @@
     return Array.isArray(siblingGroup) ? siblingGroup : [];
   }
 
-  function nearestScaleForProperty(property, value, config) {
+  function rowSamples(context, sample) {
+    if (!context || !sample || !Number.isFinite(sample._rowBucket)) {
+      return [];
+    }
+    const output = [];
+    for (let delta = -1; delta <= 1; delta += 1) {
+      const bucket = sample._rowBucket + delta;
+      const row = context.samplesByRow.get(bucket);
+      if (!Array.isArray(row)) {
+        continue;
+      }
+      for (let i = 0; i < row.length; i += 1) {
+        if (row[i] !== sample) {
+          output.push(row[i]);
+        }
+      }
+    }
+    return output;
+  }
+
+  function mergeNumericScale(primaryScale, secondaryScale) {
+    const set = new Set();
+    (Array.isArray(primaryScale) ? primaryScale : []).forEach(function (value) {
+      if (Number.isFinite(Number.parseFloat(value))) {
+        set.add(Number.parseFloat(value));
+      }
+    });
+    (Array.isArray(secondaryScale) ? secondaryScale : []).forEach(function (value) {
+      if (Number.isFinite(Number.parseFloat(value))) {
+        set.add(Number.parseFloat(value));
+      }
+    });
+    return Array.from(set).sort(function (a, b) {
+      return a - b;
+    });
+  }
+
+  function frameworkScaleForProperty(property, scale, context) {
+    const primaryId =
+      context && context.frameworkReport && context.frameworkReport.primary
+        ? context.frameworkReport.primary.id
+        : "";
+    if (!primaryId) {
+      return scale;
+    }
+
+    if (/padding|margin/.test(property)) {
+      if (primaryId === "mui") {
+        return mergeNumericScale(scale, [0, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72]);
+      }
+      if (primaryId === "tailwind") {
+        return mergeNumericScale(scale, [0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 56, 64, 72, 80, 96]);
+      }
+      if (primaryId === "bootstrap") {
+        return mergeNumericScale(scale, [0, 4, 8, 12, 16, 24, 32, 48]);
+      }
+      if (primaryId === "chakra") {
+        return mergeNumericScale(scale, [0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64]);
+      }
+    }
+
+    if (property === "font-size") {
+      if (primaryId === "mui") {
+        return mergeNumericScale(scale, [12, 13, 14, 15, 16, 18, 20, 24, 30, 34, 48, 60]);
+      }
+      if (primaryId === "tailwind") {
+        return mergeNumericScale(scale, [10, 12, 14, 16, 18, 20, 24, 30, 36, 48, 60]);
+      }
+    }
+
+    return scale;
+  }
+
+  function nearestScaleForProperty(property, value, config, context) {
     if (!Number.isFinite(value)) {
       return null;
     }
@@ -3794,10 +4417,36 @@
       scale = tokens.fontScale;
     }
 
+    scale = frameworkScaleForProperty(property, scale, context);
     if (!Array.isArray(scale) || !scale.length) {
       return null;
     }
     return utils.nearestValue(value, scale);
+  }
+
+  function percentileValue(values, ratio) {
+    if (!Array.isArray(values) || !values.length) {
+      return null;
+    }
+    const sorted = values
+      .slice()
+      .filter(function (value) {
+        return Number.isFinite(value);
+      })
+      .sort(function (a, b) {
+        return a - b;
+      });
+    if (!sorted.length) {
+      return null;
+    }
+    const index = utils.clamp(ratio, 0, 1) * (sorted.length - 1);
+    const low = Math.floor(index);
+    const high = Math.ceil(index);
+    if (low === high) {
+      return sorted[low];
+    }
+    const t = index - low;
+    return sorted[low] + (sorted[high] - sorted[low]) * t;
   }
 
   function contextualNumericTarget(property, finding, sample, context, config) {
@@ -3813,22 +4462,66 @@
       metric
     );
     const siblingValues = metricValues(siblingSamples(context, sample), metric);
+    const rowValues = metricValues(rowSamples(context, sample), metric);
 
     const siblingMedian = utils.median(siblingValues);
+    const rowMedian = utils.median(rowValues);
     const groupMedian = utils.median(groupValues);
     let target = Number.isFinite(expectedNum) ? expectedNum : null;
+    const peerValues = siblingValues.concat(rowValues).concat(groupValues);
 
+    const weighted = [];
     if (Number.isFinite(siblingMedian)) {
-      target = siblingMedian;
-    } else if (Number.isFinite(groupMedian)) {
-      target = groupMedian;
+      weighted.push({
+        value: siblingMedian,
+        weight: 0.46
+      });
+    }
+    if (Number.isFinite(rowMedian)) {
+      weighted.push({
+        value: rowMedian,
+        weight: 0.29
+      });
+    }
+    if (Number.isFinite(groupMedian)) {
+      weighted.push({
+        value: groupMedian,
+        weight: 0.2
+      });
+    }
+    if (Number.isFinite(expectedNum)) {
+      weighted.push({
+        value: expectedNum,
+        weight: 0.05
+      });
+    }
+
+    if (weighted.length) {
+      const sum = weighted.reduce(function (acc, entry) {
+        return acc + entry.value * entry.weight;
+      }, 0);
+      const totalWeight = weighted.reduce(function (acc, entry) {
+        return acc + entry.weight;
+      }, 0);
+      target = totalWeight > 0 ? sum / totalWeight : target;
     }
 
     if (!Number.isFinite(target)) {
       return null;
     }
 
-    const snapped = nearestScaleForProperty(property, target, config);
+    if (peerValues.length >= 4) {
+      const q1 = percentileValue(peerValues, 0.25);
+      const q3 = percentileValue(peerValues, 0.75);
+      if (Number.isFinite(q1) && Number.isFinite(q3)) {
+        const iqr = Math.max(0.4, q3 - q1);
+        const lowBound = Math.max(0, q1 - iqr * 0.35);
+        const highBound = q3 + iqr * 0.35;
+        target = utils.clamp(target, lowBound, highBound);
+      }
+    }
+
+    const snapped = nearestScaleForProperty(property, target, config, context);
     if (snapped && snapped.delta <= Math.max(1.4, config.thresholds.tokenOffscalePx * 1.5)) {
       target = snapped.value;
     }
@@ -3897,6 +4590,232 @@
     return expectedFont || null;
   }
 
+  function frameworkDetected(context, id) {
+    if (!context || !context.frameworkReport || !Array.isArray(context.frameworkReport.detected)) {
+      return false;
+    }
+    return context.frameworkReport.detected.some(function (entry) {
+      return entry.id === id && Number.parseFloat(entry.confidence) >= 0.15;
+    });
+  }
+
+  function frameworkEntry(context, id) {
+    if (!context || !context.frameworkReport || !Array.isArray(context.frameworkReport.detected)) {
+      return null;
+    }
+    return (
+      context.frameworkReport.detected.find(function (entry) {
+        return entry.id === id;
+      }) || null
+    );
+  }
+
+  function stableMuiSelectorsForElement(element) {
+    if (!element || !element.classList) {
+      return [];
+    }
+
+    const classTokens = Array.from(element.classList);
+    const stableMuiClasses = classTokens.filter(function (token) {
+      return /^Mui[A-Z][A-Za-z0-9-]+$/.test(token);
+    });
+    if (!stableMuiClasses.length) {
+      return [];
+    }
+
+    const selectors = [];
+    const rootClass = stableMuiClasses.find(function (token) {
+      return /-root$/.test(token);
+    });
+    if (rootClass) {
+      selectors.push("." + rootClass);
+    }
+
+    if (stableMuiClasses.length >= 2) {
+      selectors.push("." + stableMuiClasses[0] + "." + stableMuiClasses[1]);
+    } else {
+      selectors.push("." + stableMuiClasses[0]);
+    }
+
+    const todoAncestor = element.closest("[data-todo-item-type]");
+    if (todoAncestor) {
+      const type = todoAncestor.getAttribute("data-todo-item-type");
+      if (type && rootClass) {
+        selectors.push("[data-todo-item-type='" + type + "'] ." + rootClass);
+      }
+    }
+
+    return selectors;
+  }
+
+  function stablePrefixSelectorsForElement(element, prefix) {
+    if (!element || !element.classList || !prefix) {
+      return [];
+    }
+    const tokens = Array.from(element.classList).filter(function (token) {
+      return token.startsWith(prefix);
+    });
+    return tokens.slice(0, 2).map(function (token) {
+      return "." + token;
+    });
+  }
+
+  function stableSemanticSelector(element) {
+    if (!element || element.nodeType !== 1) {
+      return "";
+    }
+    if (element.id) {
+      return "#" + element.id;
+    }
+    if (element.hasAttribute("data-testid")) {
+      return "[data-testid='" + element.getAttribute("data-testid") + "']";
+    }
+    if (element.hasAttribute("data-test")) {
+      return "[data-test='" + element.getAttribute("data-test") + "']";
+    }
+    if (element.hasAttribute("data-qa")) {
+      return "[data-qa='" + element.getAttribute("data-qa") + "']";
+    }
+    if (element.hasAttribute("name")) {
+      return element.tagName.toLowerCase() + "[name='" + element.getAttribute("name") + "']";
+    }
+    const role = element.getAttribute("role");
+    if (role) {
+      return element.tagName.toLowerCase() + "[role='" + role + "']";
+    }
+    return "";
+  }
+
+  function frameworkSelectorCandidates(sample, fallbackSelector, context) {
+    const fallback = String(fallbackSelector || "").trim();
+    const output = [];
+    const seen = new Set();
+    const pushCandidate = function (candidate, stability, strategy) {
+      const normalized = String(candidate || "").trim();
+      if (!normalized || seen.has(normalized) || normalized.length > 320) {
+        return;
+      }
+      seen.add(normalized);
+      output.push({
+        selector: normalized,
+        stability: stability,
+        strategy: strategy || "scoped-css"
+      });
+    };
+
+    const element = sample && sample.element ? sample.element : null;
+    const semantic = stableSemanticSelector(element);
+    if (semantic) {
+      pushCandidate(semantic, 0.95, "semantic-hook");
+    }
+
+    if (frameworkDetected(context, "mui")) {
+      stableMuiSelectorsForElement(element).forEach(function (selector) {
+        pushCandidate(selector, 0.92, "mui-slot-class");
+      });
+    }
+
+    if (frameworkDetected(context, "antd")) {
+      stablePrefixSelectorsForElement(element, "ant-").forEach(function (selector) {
+        pushCandidate(selector, 0.86, "antd-class");
+      });
+    }
+
+    if (frameworkDetected(context, "chakra")) {
+      stablePrefixSelectorsForElement(element, "chakra-").forEach(function (selector) {
+        pushCandidate(selector, 0.86, "chakra-class");
+      });
+    }
+
+    if (frameworkDetected(context, "mantine")) {
+      stablePrefixSelectorsForElement(element, "mantine-").forEach(function (selector) {
+        pushCandidate(selector, 0.84, "mantine-class");
+      });
+    }
+
+    if (frameworkDetected(context, "bootstrap")) {
+      const bootstrapTokens = Array.from((element && element.classList) || []).filter(function (token) {
+        return /^(btn|card|container|row|col-|nav|navbar|form-control)/.test(token);
+      });
+      bootstrapTokens.slice(0, 2).forEach(function (token) {
+        pushCandidate("." + token, 0.83, "bootstrap-class");
+      });
+    }
+
+    if (frameworkDetected(context, "tailwind")) {
+      if (semantic) {
+        pushCandidate(semantic, 0.9, "tailwind-semantic-hook");
+      }
+      const tag = sample && sample.tag ? sample.tag : "";
+      if (tag && sample && sample.role) {
+        pushCandidate(tag + "[role='" + sample.role + "']", 0.76, "tailwind-semantic");
+      }
+    }
+
+    if (fallback) {
+      const unstable = /\.css-[a-z0-9]+/i.test(fallback) || /\.sc-[a-z0-9]+/i.test(fallback);
+      pushCandidate(fallback, unstable ? 0.42 : 0.72, unstable ? "generated-class" : "scoped-css");
+    }
+
+    return output.slice(0, 4);
+  }
+
+  function strategyFromFramework(context, selectorInfo, property) {
+    const primary = context && context.frameworkReport ? context.frameworkReport.primary : null;
+    const primaryId = primary ? primary.id : "";
+
+    if (selectorInfo && selectorInfo.strategy === "mui-slot-class") {
+      return {
+        channel: "theme-styleOverrides",
+        rationale:
+          "Use MUI slot classes/theme overrides to avoid unstable generated class names.",
+        framework: "mui"
+      };
+    }
+
+    if (primaryId === "tailwind") {
+      return {
+        channel: "utility-class",
+        rationale:
+          "Prefer className utility changes over ad-hoc stylesheet patches in Tailwind systems.",
+        framework: "tailwind"
+      };
+    }
+
+    if (primaryId === "bootstrap" && /color|background|border|padding|margin/.test(property)) {
+      return {
+        channel: "css-variable",
+        rationale:
+          "Bootstrap components are typically safer to adjust via variables/utilities first.",
+        framework: "bootstrap"
+      };
+    }
+
+    if (primaryId === "chakra") {
+      return {
+        channel: "theme-extension",
+        rationale:
+          "Chakra fixes should ideally be implemented with theme extension or style props.",
+        framework: "chakra"
+      };
+    }
+
+    if (primaryId === "antd") {
+      return {
+        channel: "theme-token",
+        rationale:
+          "Ant Design recommends token-driven changes where possible.",
+        framework: "antd"
+      };
+    }
+
+    return {
+      channel: selectorInfo && selectorInfo.strategy ? selectorInfo.strategy : "scoped-css",
+      rationale: "Apply fix with a stable scoped selector and validate against neighboring components.",
+      framework: primaryId || "generic"
+    };
+  }
+
   function resolveFixProperty(finding) {
     const ruleId = String(finding.ruleId || "");
     if (FIXABLE_RULE_PROPERTY_MAP[ruleId]) {
@@ -3958,10 +4877,14 @@
     return true;
   }
 
-  function createFixCandidate(selector, property, value, finding) {
+  function createFixCandidate(selector, property, value, finding, extra) {
     if (!isSelectorFixable(selector) || !property || !value) {
       return null;
     }
+
+    const metadata = extra || {};
+    const confidence = Number.parseFloat(metadata.confidence);
+    const stability = Number.parseFloat(metadata.stability);
 
     return {
       selector: selector,
@@ -3971,15 +4894,38 @@
       severity: finding.severity,
       delta: Number.parseFloat(finding.delta) || 0,
       findingId: finding.id,
-      message: finding.message || ""
+      message: finding.message || "",
+      confidence: Number.isFinite(confidence)
+        ? utils.clamp(confidence, 0, 1)
+        : 0.55,
+      stability: Number.isFinite(stability)
+        ? utils.clamp(stability, 0, 1)
+        : 0.62,
+      framework: String(metadata.framework || "generic"),
+      channel: String(metadata.channel || "scoped-css"),
+      rationale: String(metadata.rationale || "")
     };
   }
 
-  function buildFixContextModel(samples, grouped) {
+  function buildFixContextModel(samples, grouped, frameworkReport, config) {
+    const rowBucketPx =
+      config &&
+      config.fixes &&
+      Number.isFinite(Number.parseFloat(config.fixes.rowBucketPx))
+        ? Number.parseFloat(config.fixes.rowBucketPx)
+        : 14;
+
     const model = {
       samplesById: new Map(),
       samplesByGroup: new Map(),
-      samplesByParent: new Map()
+      samplesByParent: new Map(),
+      samplesByRow: new Map(),
+      frameworkReport: frameworkReport || {
+        primary: null,
+        detected: [],
+        caveats: [],
+        stats: {}
+      }
     };
 
     samples.forEach(function (sample) {
@@ -3991,6 +4937,13 @@
         }
         model.samplesByParent.get(parent).push(sample);
       }
+
+      const bucket = Math.round((sample.rect.top || 0) / Math.max(8, rowBucketPx));
+      sample._rowBucket = bucket;
+      if (!model.samplesByRow.has(bucket)) {
+        model.samplesByRow.set(bucket, []);
+      }
+      model.samplesByRow.get(bucket).push(sample);
     });
 
     if (grouped && typeof grouped.forEach === "function") {
@@ -4009,10 +4962,23 @@
     if (finding.sampleId && context.samplesById.has(finding.sampleId)) {
       return context.samplesById.get(finding.sampleId);
     }
+
+    if (finding.selector) {
+      const match = Array.from(context.samplesById.values()).find(function (sample) {
+        return sample.selector === finding.selector;
+      });
+      if (match) {
+        return match;
+      }
+    }
     return null;
   }
 
-  function buildSuggestedFixCandidates(finding) {
+  function buildSuggestedFixCandidates(finding, context) {
+    const primaryFramework =
+      context && context.frameworkReport && context.frameworkReport.primary
+        ? String(context.frameworkReport.primary.id || "generic")
+        : "generic";
     const hints =
       finding &&
       finding.metadata &&
@@ -4025,7 +4991,14 @@
           hint.selector,
           hint.property,
           hint.value,
-          finding
+          finding,
+          {
+            confidence: hint.confidence === "context-high" ? 0.9 : hint.confidence === "context-medium" ? 0.78 : 0.66,
+            stability: 0.82,
+            framework: primaryFramework,
+            channel: "contextual-heuristic",
+            rationale: "Derived from local card/component context model."
+          }
         );
       })
       .filter(Boolean);
@@ -4036,40 +5009,65 @@
     const selector = String(finding.selector || "").trim();
     const ruleId = String(finding.ruleId || "");
     const sample = sampleForFinding(finding, context);
+    const selectorInfos = frameworkSelectorCandidates(sample, selector, context);
+    const severityConfidence =
+      finding.severity === "critical"
+        ? 0.9
+        : finding.severity === "high"
+          ? 0.84
+          : finding.severity === "medium"
+            ? 0.74
+            : 0.62;
 
-    buildSuggestedFixCandidates(finding).forEach(function (candidate) {
+    const emitBySelectors = function (property, value, channelHint, rationaleHint) {
+      selectorInfos.forEach(function (selectorInfo) {
+        const strategy = strategyFromFramework(context, selectorInfo, property);
+        const candidate = createFixCandidate(
+          selectorInfo.selector,
+          property,
+          value,
+          finding,
+          {
+            confidence: severityConfidence,
+            stability: selectorInfo.stability,
+            framework: strategy.framework || "generic",
+            channel: channelHint || strategy.channel,
+            rationale: rationaleHint || strategy.rationale
+          }
+        );
+        if (candidate) {
+          candidates.push(candidate);
+        }
+      });
+    };
+
+    buildSuggestedFixCandidates(finding, context).forEach(function (candidate) {
       candidates.push(candidate);
     });
 
     if (ruleId === "a11y-touch-target-size") {
       const target = parseTouchTarget(finding.expected);
-      if (!target || !isSelectorFixable(selector)) {
+      if (!target || !selectorInfos.length) {
         return candidates;
       }
 
-      const widthCandidate = createFixCandidate(
-        selector,
+      emitBySelectors(
         "min-width",
         target.width,
-        finding
+        "accessibility-target-size",
+        "Set minimum target width for interactive accessibility compliance."
       );
-      const heightCandidate = createFixCandidate(
-        selector,
+      emitBySelectors(
         "min-height",
         target.height,
-        finding
+        "accessibility-target-size",
+        "Set minimum target height for interactive accessibility compliance."
       );
-      if (widthCandidate) {
-        candidates.push(widthCandidate);
-      }
-      if (heightCandidate) {
-        candidates.push(heightCandidate);
-      }
       return candidates;
     }
 
     if (ruleId === "content-text-overflow-clip") {
-      if (!isSelectorFixable(selector)) {
+      if (!selectorInfos.length) {
         return candidates;
       }
 
@@ -4078,27 +5076,30 @@
         ["text-overflow", "ellipsis"],
         ["white-space", "nowrap"]
       ].forEach(function (entry) {
-        const candidate = createFixCandidate(selector, entry[0], entry[1], finding);
-        if (candidate) {
-          candidates.push(candidate);
-        }
+        emitBySelectors(
+          entry[0],
+          entry[1],
+          "content-truncation",
+          "Use explicit truncation semantics to avoid accidental text clipping."
+        );
       });
       return candidates;
     }
 
     if (ruleId === "content-text-vertical-clip") {
-      const candidate = createFixCandidate(selector, "overflow-y", "visible", finding);
-      if (candidate) {
-        candidates.push(candidate);
-      }
+      emitBySelectors(
+        "overflow-y",
+        "visible",
+        "content-overflow",
+        "Allow vertical overflow or adjust layout constraints to avoid hidden text."
+      );
       return candidates;
     }
 
     const property = resolveFixProperty(finding);
     const value = resolveFixValue(property, finding, sample, context, config);
-    const singleCandidate = createFixCandidate(selector, property, value, finding);
-    if (singleCandidate) {
-      candidates.push(singleCandidate);
+    if (property && value) {
+      emitBySelectors(property, value);
     }
     return candidates;
   }
@@ -4116,13 +5117,27 @@
         selector,
         "outline",
         "2px solid #1d8ea9",
-        focusFinding
+        focusFinding,
+        {
+          confidence: 0.88,
+          stability: 0.98,
+          framework: "generic",
+          channel: "focus-visible-style",
+          rationale: "Global keyboard focus visibility coverage fallback."
+        }
       );
       const offsetCandidate = createFixCandidate(
         selector,
         "outline-offset",
         "2px",
-        focusFinding
+        focusFinding,
+        {
+          confidence: 0.86,
+          stability: 0.98,
+          framework: "generic",
+          channel: "focus-visible-style",
+          rationale: "Global keyboard focus visibility coverage fallback."
+        }
       );
       if (outlineCandidate) {
         output.push(outlineCandidate);
@@ -4168,7 +5183,11 @@
       }
 
       const selectorEntry = bySelector.get(selector);
-      const score = severityWeight(candidate.severity) * 1000 + candidate.delta;
+      const score =
+        severityWeight(candidate.severity) * 1000 +
+        candidate.delta +
+        (Number.isFinite(candidate.confidence) ? candidate.confidence : 0.5) * 120 +
+        (Number.isFinite(candidate.stability) ? candidate.stability : 0.6) * 80;
       if (score > selectorEntry.maxScore) {
         selectorEntry.maxScore = score;
       }
@@ -4187,6 +5206,11 @@
         delta: candidate.delta,
         findingId: candidate.findingId,
         message: candidate.message,
+        confidence: candidate.confidence,
+        stability: candidate.stability,
+        framework: candidate.framework,
+        channel: candidate.channel,
+        rationale: candidate.rationale,
         score: score
       });
     });
@@ -4217,11 +5241,36 @@
               value: declaration.value,
               sourceRuleId: declaration.ruleId,
               severity: declaration.severity,
-              message: declaration.message
+              message: declaration.message,
+              confidence: Number.isFinite(declaration.confidence)
+                ? utils.toFixed(declaration.confidence, 2)
+                : 0.55,
+              stability: Number.isFinite(declaration.stability)
+                ? utils.toFixed(declaration.stability, 2)
+                : 0.62,
+              framework: declaration.framework || "generic",
+              channel: declaration.channel || "scoped-css",
+              rationale: declaration.rationale || ""
             };
           }),
           issueCount: findingIds.size,
           maxScore: bucket.maxScore,
+          channels: Array.from(
+            new Set(
+              declarations.map(function (declaration) {
+                return declaration.channel || "scoped-css";
+              })
+            )
+          ),
+          frameworks: Array.from(
+            new Set(
+              declarations
+                .map(function (declaration) {
+                  return declaration.framework || "generic";
+                })
+                .filter(Boolean)
+            )
+          ),
           maxSeverity: declarations
             .slice()
             .sort(function (a, b) {
@@ -4284,6 +5333,200 @@
     return lines.join("\n").trim();
   }
 
+  function averageDeclarationMetric(declarations, key, fallback) {
+    const values = (declarations || [])
+      .map(function (declaration) {
+        return Number.parseFloat(declaration[key]);
+      })
+      .filter(function (value) {
+        return Number.isFinite(value);
+      });
+    const avg = utils.average(values);
+    return Number.isFinite(avg) ? avg : fallback;
+  }
+
+  function riskFromSignals(severity, confidence, stability) {
+    const sev = severityWeight(severity || "medium") / 4;
+    const c = Number.isFinite(confidence) ? utils.clamp(confidence, 0, 1) : 0.55;
+    const s = Number.isFinite(stability) ? utils.clamp(stability, 0, 1) : 0.62;
+    const riskScore = (1 - c) * 0.5 + (1 - s) * 0.36 + sev * 0.14;
+    const normalized = utils.toFixed(utils.clamp(riskScore, 0, 1), 2);
+    if (normalized >= 0.62) {
+      return { level: "high", score: normalized };
+    }
+    if (normalized >= 0.38) {
+      return { level: "medium", score: normalized };
+    }
+    return { level: "low", score: normalized };
+  }
+
+  function guidanceForChannel(channel, frameworkId, selector) {
+    const framework = FRAMEWORK_LIBRARY_MAP[frameworkId] || null;
+    const frameworkName = framework ? framework.name : "Generic CSS";
+    const target = selector || "(selector)";
+
+    if (channel === "theme-styleOverrides") {
+      return (
+        "Use " +
+        frameworkName +
+        " theme component styleOverrides for " +
+        target +
+        " before applying ad-hoc CSS."
+      );
+    }
+    if (channel === "utility-class") {
+      return (
+        "Adjust utility classes on the source component for " +
+        target +
+        " instead of adding detached stylesheet overrides."
+      );
+    }
+    if (channel === "css-variable") {
+      return (
+        "Prefer CSS variable/token updates that affect " +
+        target +
+        " consistently across the framework."
+      );
+    }
+    if (channel === "theme-extension" || channel === "theme-token") {
+      return (
+        "Implement via theme tokens/extensions to keep " +
+        target +
+        " aligned with component defaults."
+      );
+    }
+    if (channel === "contextual-heuristic") {
+      return (
+        "Context-derived value based on sibling and row baselines around " +
+        target +
+        "; validate visually before merging."
+      );
+    }
+    if (channel === "accessibility-target-size") {
+      return (
+        "Keep target-size changes for " +
+        target +
+        " behind interactive controls only to avoid layout side effects."
+      );
+    }
+    if (channel === "focus-visible-style") {
+      return "Global keyboard focus fallback. Keep brand contrast and visible ring thickness.";
+    }
+    return (
+      "Apply as scoped CSS for " +
+      target +
+      " and verify against adjacent components at multiple viewport sizes."
+    );
+  }
+
+  function collectFrameworkChannels(rules) {
+    const counts = new Map();
+    (rules || []).forEach(function (rule) {
+      (rule.channels || []).forEach(function (channel) {
+        const key = String(channel || "scoped-css");
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+    });
+    return Array.from(counts.entries())
+      .map(function (entry) {
+        return {
+          channel: entry[0],
+          usage: entry[1]
+        };
+      })
+      .sort(function (a, b) {
+        return b.usage - a.usage;
+      })
+      .slice(0, 10);
+  }
+
+  function buildFixRecommendations(rules, frameworkReport) {
+    const frameworkId =
+      frameworkReport && frameworkReport.primary && frameworkReport.primary.id
+        ? frameworkReport.primary.id
+        : "generic";
+
+    const recs = (rules || [])
+      .map(function (rule, index) {
+        if (!rule || !Array.isArray(rule.declarations) || !rule.declarations.length) {
+          return null;
+        }
+
+        const confidence = averageDeclarationMetric(rule.declarations, "confidence", 0.55);
+        const stability = averageDeclarationMetric(rule.declarations, "stability", 0.62);
+        const risk = riskFromSignals(rule.maxSeverity, confidence, stability);
+        const declarations = rule.declarations
+          .slice()
+          .sort(function (a, b) {
+            const sevDiff = severityWeight(b.severity) - severityWeight(a.severity);
+            if (sevDiff !== 0) {
+              return sevDiff;
+            }
+            return String(a.property || "").localeCompare(String(b.property || ""));
+          });
+        const preferred = declarations[0];
+        const preferredChannel = String(
+          (preferred && preferred.channel) ||
+            (Array.isArray(rule.channels) && rule.channels.length ? rule.channels[0] : "scoped-css")
+        );
+        const preferredFramework =
+          (preferred && preferred.framework) ||
+          (Array.isArray(rule.frameworks) && rule.frameworks.length ? rule.frameworks[0] : frameworkId);
+        const priority =
+          severityWeight(rule.maxSeverity) * 100 +
+          Math.min(60, Number.parseFloat(rule.issueCount) || 0) +
+          confidence * 25 +
+          stability * 15;
+
+        return {
+          id: "rec-" + String(index + 1).padStart(3, "0"),
+          selector: rule.selector,
+          severity: rule.maxSeverity,
+          priority: utils.toFixed(priority, 2),
+          issueCount: rule.issueCount,
+          confidence: utils.toFixed(confidence, 2),
+          stability: utils.toFixed(stability, 2),
+          risk: risk.level,
+          riskScore: risk.score,
+          channels: Array.isArray(rule.channels) ? rule.channels.slice(0, 6) : [preferredChannel],
+          framework: preferredFramework || "generic",
+          declarations: declarations.slice(0, 8).map(function (declaration) {
+            return {
+              property: declaration.property,
+              value: declaration.value,
+              sourceRuleId: declaration.sourceRuleId,
+              severity: declaration.severity,
+              confidence: declaration.confidence,
+              stability: declaration.stability,
+              channel: declaration.channel,
+              framework: declaration.framework || "generic",
+              rationale: declaration.rationale || ""
+            };
+          }),
+          guidance: guidanceForChannel(preferredChannel, preferredFramework, rule.selector),
+          caveat:
+            FRAMEWORK_LIBRARY_MAP[preferredFramework] &&
+            FRAMEWORK_LIBRARY_MAP[preferredFramework].caveat
+              ? FRAMEWORK_LIBRARY_MAP[preferredFramework].caveat
+              : ""
+        };
+      })
+      .filter(Boolean)
+      .sort(function (a, b) {
+        if (b.priority !== a.priority) {
+          return b.priority - a.priority;
+        }
+        return a.selector.localeCompare(b.selector);
+      });
+
+    return {
+      generatedAt: utils.nowIso(),
+      total: recs.length,
+      top: recs.slice(0, 40),
+      channelDistribution: collectFrameworkChannels(rules)
+    };
+  }
+
   function buildFixPackage(findings, config, contextModel) {
     const defaults = root.DEFAULT_CONFIG && root.DEFAULT_CONFIG.fixes
       ? root.DEFAULT_CONFIG.fixes
@@ -4296,16 +5539,26 @@
     const fixConfig = utils.deepMerge(defaults, config.fixes || {});
 
     if (!fixConfig.generateFixes) {
+      const frameworkReport =
+        contextModel && contextModel.frameworkReport
+          ? contextModel.frameworkReport
+          : { primary: null, detected: [], caveats: [], stats: {} };
       return {
         generatedAt: utils.nowIso(),
         rules: [],
         cssText: "",
-        disabled: true
+        disabled: true,
+        frameworkProfile: frameworkReport,
+        recommendations: buildFixRecommendations([], frameworkReport)
       };
     }
 
     const maxRules = Number.parseFloat(fixConfig.maxRules);
     const limit = Number.isFinite(maxRules) && maxRules > 0 ? Math.round(maxRules) : 140;
+    const frameworkReport =
+      contextModel && contextModel.frameworkReport
+        ? contextModel.frameworkReport
+        : { primary: null, detected: [], caveats: [], stats: {} };
     const candidates = collectFixCandidates(findings, contextModel, config);
     const rules = mergeFixCandidates(candidates, limit);
     const cssText = buildFixCssText(
@@ -4313,11 +5566,14 @@
       fixConfig.useImportant !== false,
       fixConfig.includeComments !== false
     );
+    const recommendations = buildFixRecommendations(rules, frameworkReport);
 
     return {
       generatedAt: utils.nowIso(),
       rules: rules,
-      cssText: cssText
+      cssText: cssText,
+      frameworkProfile: frameworkReport,
+      recommendations: recommendations
     };
   }
 
@@ -4357,10 +5613,13 @@
       return group.length >= config.scanning.minGroupSize;
     });
 
-    reportProgress(36, "css-index", "Indexing stylesheet sources");
+    reportProgress(34, "framework", "Fingerprinting CSS frameworks and caveats");
+    const frameworkReport = detectFrameworks(samples);
+
+    reportProgress(38, "css-index", "Indexing stylesheet sources");
     const cssSourceIndex = config.scanning.traceCSS ? buildStyleRuleIndex() : null;
 
-    reportProgress(44, "rules", "Running rule families");
+    reportProgress(46, "rules", "Running rule families");
     const findings = [];
 
     runGroupRules(analyzableGroups, config, findings, cssSourceIndex);
@@ -4425,7 +5684,7 @@
       customRulesMeta = pushCustomRuleFindings(samples, config, findings);
     }
 
-    reportProgress(72, "normalize", "Deduplicating and ranking findings");
+    reportProgress(74, "normalize", "Deduplicating and ranking findings");
     const severityOrder = {
       critical: 4,
       high: 3,
@@ -4447,9 +5706,14 @@
 
     const limitedFindings = deduped.slice(0, config.reporting.maxFindings);
     const summary = scoreFromFindings(limitedFindings);
-    const fixContextModel = buildFixContextModel(samples, grouped);
+    const fixContextModel = buildFixContextModel(
+      samples,
+      grouped,
+      frameworkReport,
+      config
+    );
 
-    reportProgress(88, "fixes", "Synthesizing contextual CSS fixes");
+    reportProgress(90, "fixes", "Synthesizing contextual CSS fixes");
     const fixes = buildFixPackage(limitedFindings, config, fixContextModel);
 
     const elapsedMs = performance.now() - startedAt;
@@ -4470,13 +5734,31 @@
         totalFindingsBeforeLimit: deduped.length,
         numericMetricsTracked: NUMERIC_METRICS.length,
         customRulesParsed: customRulesMeta.parsed,
-        customRulesExecuted: customRulesMeta.executed
+        customRulesExecuted: customRulesMeta.executed,
+        frameworkPrimary:
+          frameworkReport && frameworkReport.primary
+            ? frameworkReport.primary.name
+            : "Unknown",
+        frameworkPrimaryConfidence:
+          frameworkReport && frameworkReport.primary
+            ? frameworkReport.primary.confidence
+            : 0,
+        frameworksDetected: Array.isArray(frameworkReport && frameworkReport.detected)
+          ? frameworkReport.detected.length
+          : 0,
+        frameworkCaveats: frameworkReport && frameworkReport.caveats
+          ? frameworkReport.caveats
+          : [],
+        frameworkStats: frameworkReport && frameworkReport.stats
+          ? frameworkReport.stats
+          : {}
       },
       summary: summary,
       breakdown: {
         byCategory: categoryBreakdown(limitedFindings),
         byRule: ruleBreakdown(limitedFindings)
       },
+      frameworks: frameworkReport,
       findings: limitedFindings,
       fixes: fixes
     };

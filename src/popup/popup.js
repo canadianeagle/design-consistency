@@ -48,7 +48,11 @@
     togglePanel: document.getElementById("togglePanel"),
     severityFilter: document.getElementById("severityFilter"),
     maxVisibleFindingsQuick: document.getElementById("maxVisibleFindingsQuick"),
-    maxVisibleFindingsValue: document.getElementById("maxVisibleFindingsValue")
+    maxVisibleFindingsValue: document.getElementById("maxVisibleFindingsValue"),
+    frameworkPrimaryChip: document.getElementById("frameworkPrimaryChip"),
+    frameworkList: document.getElementById("frameworkList"),
+    recommendationCount: document.getElementById("recommendationCount"),
+    recommendationList: document.getElementById("recommendationList")
   };
 
   function setStatus(text, isError) {
@@ -62,6 +66,7 @@
       prepare: "Prep",
       collect: "Collect",
       group: "Group",
+      framework: "Framework",
       "css-index": "CSS Index",
       rules: "Rules",
       normalize: "Rank",
@@ -203,6 +208,214 @@
     el.applyFixesBtn.disabled = !hasFixes;
     el.copyFixesBtn.disabled = !hasFixes;
     el.downloadFixesBtn.disabled = !hasFixes;
+  }
+
+  function frameworkReportFromResult(result) {
+    const fromResult = result && result.frameworks ? result.frameworks : null;
+    const fromFixes = result && result.fixes && result.fixes.frameworkProfile
+      ? result.fixes.frameworkProfile
+      : null;
+    const report = fromResult || fromFixes || null;
+    if (!report) {
+      return {
+        primary: null,
+        detected: [],
+        caveats: []
+      };
+    }
+    return {
+      primary: report.primary || null,
+      detected: Array.isArray(report.detected) ? report.detected : [],
+      caveats: Array.isArray(report.caveats) ? report.caveats : []
+    };
+  }
+
+  function renderFrameworkProfile(result) {
+    const report = frameworkReportFromResult(result);
+    el.frameworkList.innerHTML = "";
+
+    if (!report.primary && !report.detected.length) {
+      el.frameworkPrimaryChip.textContent = "Unknown";
+      const empty = document.createElement("article");
+      empty.className = "framework-card";
+      const title = document.createElement("div");
+      title.className = "framework-name";
+      title.textContent = "No strong framework signature";
+      const meta = document.createElement("div");
+      meta.className = "framework-meta";
+      meta.textContent =
+        "Scan a richer surface or increase selector coverage in Advanced Config.";
+      empty.appendChild(title);
+      empty.appendChild(meta);
+      el.frameworkList.appendChild(empty);
+      return;
+    }
+
+    const primaryLabel = report.primary
+      ? String(report.primary.name || report.primary.id || "Unknown")
+      : "Unknown";
+    const primaryConfidence = report.primary
+      ? Number.parseFloat(report.primary.confidence) || 0
+      : 0;
+    el.frameworkPrimaryChip.textContent =
+      primaryLabel + " " + Math.round(primaryConfidence * 100) + "%";
+
+    report.detected.slice(0, 5).forEach(function (framework) {
+      const card = document.createElement("article");
+      card.className = "framework-card";
+
+      const head = document.createElement("div");
+      head.className = "framework-head";
+
+      const name = document.createElement("div");
+      name.className = "framework-name";
+      name.textContent = String(framework.name || framework.id || "Unknown");
+
+      const confidence = document.createElement("div");
+      confidence.className = "framework-confidence";
+      confidence.textContent =
+        Math.round((Number.parseFloat(framework.confidence) || 0) * 100) + "%";
+
+      head.appendChild(name);
+      head.appendChild(confidence);
+
+      const meta = document.createElement("div");
+      meta.className = "framework-meta";
+      const channelText = Array.isArray(framework.preferredChannels)
+        ? framework.preferredChannels.slice(0, 2).join(" | ")
+        : "scoped-css";
+      meta.textContent = "Preferred channels: " + channelText;
+
+      const caveat = document.createElement("div");
+      caveat.className = "framework-caveat";
+      caveat.textContent = String(
+        framework.caveat || "No caveat captured for this framework."
+      );
+
+      card.appendChild(head);
+      card.appendChild(meta);
+      card.appendChild(caveat);
+
+      if (Array.isArray(framework.evidence) && framework.evidence.length) {
+        const evidence = document.createElement("div");
+        evidence.className = "framework-meta";
+        evidence.textContent =
+          "Evidence: " + framework.evidence.slice(0, 2).join(" | ");
+        card.appendChild(evidence);
+      }
+
+      el.frameworkList.appendChild(card);
+    });
+  }
+
+  function renderRecommendations(result) {
+    const recommendations =
+      result &&
+      result.fixes &&
+      result.fixes.recommendations &&
+      Array.isArray(result.fixes.recommendations.top)
+        ? result.fixes.recommendations
+        : {
+            total: 0,
+            top: [],
+            channelDistribution: []
+          };
+    const top = recommendations.top.slice(0, 10);
+    el.recommendationList.innerHTML = "";
+    el.recommendationCount.textContent = String(top.length);
+
+    if (!top.length) {
+      const empty = document.createElement("div");
+      empty.className = "card";
+      empty.dataset.severity = "low";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = "No fix recommendations available yet.";
+      const detail = document.createElement("div");
+      detail.className = "delta";
+      detail.textContent = "Run a scan with Auto CSS Fixes enabled.";
+      empty.appendChild(title);
+      empty.appendChild(detail);
+      el.recommendationList.appendChild(empty);
+      return;
+    }
+
+    top.forEach(function (rec) {
+      const card = document.createElement("article");
+      card.className = "card recommendation-card";
+      card.dataset.severity = String(rec.severity || "medium");
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent =
+        String(rec.severity || "medium").toUpperCase() +
+        " | " +
+        String(rec.framework || "generic") +
+        " | score " +
+        String(rec.priority || "-");
+
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = String(rec.selector || "(selector unavailable)");
+
+      const chipRow = document.createElement("div");
+      chipRow.className = "recommendation-chip-row";
+
+      const riskChip = document.createElement("span");
+      riskChip.className = "mini-chip risk-" + String(rec.risk || "medium");
+      riskChip.textContent = "risk " + String(rec.risk || "medium");
+      chipRow.appendChild(riskChip);
+
+      const channelChip = document.createElement("span");
+      channelChip.className = "mini-chip";
+      const firstChannel =
+        Array.isArray(rec.channels) && rec.channels.length
+          ? rec.channels[0]
+          : "scoped-css";
+      channelChip.textContent = firstChannel;
+      chipRow.appendChild(channelChip);
+
+      const confidenceChip = document.createElement("span");
+      confidenceChip.className = "mini-chip";
+      confidenceChip.textContent =
+        "conf " + String(rec.confidence || 0) + " | stable " + String(rec.stability || 0);
+      chipRow.appendChild(confidenceChip);
+
+      const decl = document.createElement("div");
+      decl.className = "delta";
+      const declarationPreview = Array.isArray(rec.declarations)
+        ? rec.declarations
+            .slice(0, 3)
+            .map(function (item) {
+              return String(item.property || "") + ": " + String(item.value || "");
+            })
+            .join("; ")
+        : "";
+      decl.textContent =
+        "Patch: " +
+        (declarationPreview || "No declaration preview") +
+        " | issues " +
+        String(rec.issueCount || 0);
+
+      const guidance = document.createElement("div");
+      guidance.className = "delta";
+      guidance.textContent = "Guidance: " + String(rec.guidance || "");
+
+      card.appendChild(meta);
+      card.appendChild(title);
+      card.appendChild(chipRow);
+      card.appendChild(decl);
+      card.appendChild(guidance);
+
+      if (rec.caveat) {
+        const caveat = document.createElement("div");
+        caveat.className = "delta";
+        caveat.textContent = "Caveat: " + String(rec.caveat);
+        card.appendChild(caveat);
+      }
+
+      el.recommendationList.appendChild(card);
+    });
   }
 
   function renderCategoryBreakdown(result) {
@@ -480,6 +693,8 @@
 
   function applyResultToUI(result) {
     renderSummary(result);
+    renderFrameworkProfile(result);
+    renderRecommendations(result);
     renderFindings(result);
     renderCategoryBreakdown(result);
     renderFixes(result);
