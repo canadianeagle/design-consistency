@@ -39,6 +39,8 @@ You can:
 ## Project Structure
 
 - `manifest.json`
+- `.github/workflows/ci.yml`
+- `.github/workflows/release.yml`
 - `src/background/service-worker.js`
 - `src/content/scanner.js`
 - `src/content/overlay.js`
@@ -65,6 +67,17 @@ You can:
 npm install
 npm run check
 ```
+
+### CI/CD
+
+- `CI` workflow (`.github/workflows/ci.yml`)
+  - Triggers on `push` to `main` and all pull requests
+  - Runs `npm ci`, `npm run check`, `npm run build`, `npm run package`
+  - Uploads `dist/ui-consistency-investigator.zip` as a workflow artifact
+- `Release Package` workflow (`.github/workflows/release.yml`)
+  - Triggers on tags matching `v*`
+  - Builds and packages extension
+  - Publishes `dist/ui-consistency-investigator.zip` to GitHub Release assets
 
 ### Load Extension (Unpacked)
 
@@ -95,8 +108,10 @@ Outputs:
 
 ### GitHub Release Artifact
 
-1. Create a GitHub release tag
-2. Attach `dist/ui-consistency-investigator.zip` to the release
+1. Create and push a semver tag, e.g.:
+   - `git tag v0.2.1 && git push origin v0.2.1`
+2. Release workflow automatically creates/updates the release and uploads:
+   - `dist/ui-consistency-investigator.zip`
 
 ## Testing
 

@@ -41,6 +41,28 @@ Output file:
 4. Update listing details and screenshots
 5. Submit for review
 
+## GitHub Actions CI/CD
+
+Workflows:
+- `CI`: runs on PRs + pushes to `main`
+- `Release Package`: runs on `v*` tags and publishes release zip
+
+To verify CI locally before pushing:
+
+```bash
+npm ci
+npm run check
+npm run build
+npm run package
+```
+
+To trigger automated GitHub release packaging:
+
+```bash
+git tag v0.2.1
+git push origin v0.2.1
+```
+
 ## Internal/QA deployment via unpacked extension
 
 1. Open `chrome://extensions`
