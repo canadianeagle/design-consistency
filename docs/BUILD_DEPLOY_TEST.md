@@ -13,6 +13,12 @@ This validates:
 - Options page ID wiring
 - JavaScript syntax checks for all `src/` and `scripts/` files
 
+If branding icons are updated, regenerate them first:
+
+```bash
+./scripts/generate_icons.sh
+```
+
 ### Create Build Output
 
 ```bash

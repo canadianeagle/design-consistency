@@ -41,6 +41,7 @@ You can:
 - `manifest.json`
 - `.github/workflows/ci.yml`
 - `.github/workflows/release.yml`
+- `assets/icons/*` (extension logo and icon sizes)
 - `src/background/service-worker.js`
 - `src/content/scanner.js`
 - `src/content/overlay.js`
@@ -51,6 +52,7 @@ You can:
 - `scripts/check.mjs`
 - `scripts/build.mjs`
 - `scripts/package.mjs`
+- `scripts/generate_icons.sh`
 - `docs/BUILD_DEPLOY_TEST.md`
 - `AGENTS.md`
 
@@ -96,6 +98,14 @@ npm run package
 Outputs:
 - Build folder: `dist/ui-consistency-investigator`
 - Zip package: `dist/ui-consistency-investigator.zip`
+
+### Regenerate Logo Icons
+
+```bash
+./scripts/generate_icons.sh
+```
+
+This regenerates SVG + PNG icon outputs under `assets/icons/`.
 
 ## Deploy
 

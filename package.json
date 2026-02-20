@@ -1,6 +1,6 @@
 {
   "name": "ui-consistency-investigator",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Configurable Chrome extension for deep UI consistency and design diagnostics.",
   "type": "module",

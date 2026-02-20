@@ -15,6 +15,7 @@ function clean() {
 function copyProjectFiles() {
   cpSync(join(ROOT, "manifest.json"), join(BUILD_DIR, "manifest.json"));
   cpSync(join(ROOT, "src"), join(BUILD_DIR, "src"), { recursive: true });
+  cpSync(join(ROOT, "assets"), join(BUILD_DIR, "assets"), { recursive: true });
   cpSync(join(ROOT, "README.md"), join(BUILD_DIR, "README.md"));
 }
 
