@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>UI Consistency Investigator</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <main class="side-panel-root">
+
+      <!-- Hero Header -->
+      <header class="hero">
+        <img class="hero-logo" src="../../assets/icons/icon-128.png" alt="UI Consistency Investigator icon" />
+        <div class="hero-copy">
+          <p class="eyebrow">Side Panel Console</p>
+          <h1>UI Consistency Investigator</h1>
+          <p class="subtext">
+            Deep scan + contextual auto-fixes + accessibility and typography diagnostics.
+          </p>
+        </div>
+      </header>
+
+      <!-- Scan Controls -->
+      <details class="section-collapsible" open data-section="scanControls">
+        <summary class="section-summary">Scan Controls</summary>
+        <section class="section-body">
+          <section class="control-grid">
+            <button id="scanBtn" class="scan-btn" title="Run a full scan of the current tab">Run Granular Scan</button>
+            <button id="resetViewBtn" class="ghost-btn" title="Hide overlays and clear injected fixes on this page">Reset View</button>
+            <button id="optionsBtn" class="ghost-btn" title="Open advanced configuration and custom rule builder">Advanced Config</button>
+          </section>
+        </section>
+      </details>
+
+      <!-- Scan Progress -->
+      <details class="section-collapsible" open data-section="scanProgress">
+        <summary class="section-summary">Scan Progress</summary>
+        <section class="section-body panel-block scan-panel">
+          <section class="scan-row">
+            <span class="scan-led" id="scanLed" aria-hidden="true"></span>
+            <div>
+              <h2 data-tip-target="true" data-tip="Live scan progress from content script stages (collect, rules, fixes).">Progress Monitor</h2>
+              <p class="hint">Includes style indexing, rule execution, and contextual fix synthesis.</p>
+            </div>
+            <span class="scan-value" id="scanProgressValue">0%</span>
+          </section>
+
+          <section class="meter-track" aria-label="Scan progress meter">
+            <section id="scanProgressBar" class="meter-fill"></section>
+          </section>
+          <section class="meter-detail">
+            <span id="scanStageLabel">Idle</span>
+            <span id="scanDetailLabel">Ready for scan</span>
+          </section>
+        </section>
+      </details>
+
+      <!-- Summary Cards -->
+      <details class="section-collapsible" open data-section="summaryCards">
+        <summary class="section-summary">Summary</summary>
+        <section class="section-body">
+          <section class="summary" id="summary">
+            <article>
+              <p>Score</p>
+              <strong id="score">-</strong>
+            </article>
+            <article>
+              <p>Findings</p>
+              <strong id="findingsTotal">-</strong>
+            </article>
+            <article>
+              <p>Elements</p>
+              <strong id="elementsTotal">-</strong>
+            </article>
+          </section>
+        </section>
+      </details>
+
+      <!-- Framework Detection -->
+      <details class="section-collapsible" open data-section="frameworkDetection">
+        <summary class="section-summary">Framework Detection</summary>
+        <section class="section-body panel-block">
+          <section class="results-head">
+            <h2 data-tip-target="true" data-tip="Framework fingerprinting analyzes class patterns, runtime sources, and style signatures to determine the most likely UI stack and caveats.">Framework Fingerprint</h2>
+            <span id="frameworkPrimaryChip" class="chip">Unknown</span>
+          </section>
+          <p class="hint">Use this to choose the safest implementation channel (theme token, utility class, scoped CSS, etc.).</p>
+          <section id="frameworkList" class="framework-list"></section>
+
+          <div class="framework-override-wrap">
+            <label class="override-label" data-tip="Manually override detected framework to tailor fix recommendations.">
+              Manual Framework Override
+              <select id="frameworkOverride">
+                <option value="auto">Auto-detect</option>
+                <option value="mui">Material UI</option>
+                <option value="tailwind">Tailwind CSS</option>
+                <option value="bootstrap">Bootstrap</option>
+                <option value="chakra">Chakra UI</option>
+                <option value="antd">Ant Design</option>
+                <option value="mantine">Mantine</option>
+                <option value="emotion">Emotion</option>
+                <option value="styled-components">Styled Components</option>
+                <option value="react">React</option>
+                <option value="vue">Vue.js</option>
+                <option value="angular">Angular</option>
+                <option value="svelte">Svelte</option>
+                <option value="nextjs">Next.js</option>
+                <option value="nuxtjs">Nuxt.js</option>
+                <option value="gatsby">Gatsby</option>
+                <option value="ember">Ember.js</option>
+                <option value="jquery">jQuery</option>
+                <option value="wordpress">WordPress</option>
+                <option value="shopify">Shopify</option>
+                <option value="webflow">Webflow</option>
+                <option value="wix">Wix</option>
+                <option value="squarespace">Squarespace</option>
+              </select>
+            </label>
+            <p class="hint" id="frameworkOverrideStatus">Override: off (auto-detect active)</p>
+          </div>
+        </section>
+      </details>
+
+      <!-- Overlay Controls -->
+      <details class="section-collapsible" open data-section="overlayControls">
+        <summary class="section-summary">Overlay Controls</summary>
+        <section class="section-body panel-block">
+          <h2 data-tip-target="true" data-tip="Controls what renders in the in-page overlay.">Overlay Settings</h2>
+          <p class="hint">Adjust diagnostics without rerunning the scan.</p>
+
+          <section class="toggles">
+            <label data-tip="Draw color-coded boxes around problematic elements."><input type="checkbox" id="toggleHighlights" checked /> Highlights</label>
+            <label data-tip="Draw ruler lines and spacing guides for each finding."><input type="checkbox" id="toggleRulers" checked /> Rulers</label>
+            <label data-tip="Show compact finding labels directly above highlighted elements."><input type="checkbox" id="toggleLabels" checked /> Labels</label>
+            <label data-tip="Show the floating diagnostics panel on the page."><input type="checkbox" id="togglePanel" checked /> Overlay Panel</label>
+          </section>
+
+          <section class="filters">
+            <label data-tip="Filter overlay to only show specific severity levels.">
+              Overlay Severity
+              <select id="severityFilter">
+                <option value="all">All</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </label>
+
+            <label class="range-wrap" data-tip="Maximum findings displayed in on-page overlay list and highlights.">
+              Overlay Density
+              <section class="range-control">
+                <input id="maxVisibleFindingsQuick" type="range" min="40" max="420" step="10" />
+                <output id="maxVisibleFindingsValue" for="maxVisibleFindingsQuick">250</output>
+              </section>
+            </label>
+          </section>
+        </section>
+      </details>
+
+      <!-- Auto CSS Fixes -->
+      <details class="section-collapsible" open data-section="autoCssFixes">
+        <summary class="section-summary">Auto CSS Fixes</summary>
+        <section class="section-body panel-block">
+          <section class="results-head">
+            <h2 data-tip-target="true" data-tip="Context-aware patch candidates inferred from peers, siblings, and token scales.">Generated Patches</h2>
+            <span id="fixRuleCount" class="chip">0 rules</span>
+          </section>
+          <p class="hint">Inject for validation, then copy or download to apply in source control.</p>
+
+          <textarea
+            id="fixCssPreview"
+            class="code-preview"
+            rows="10"
+            readonly
+            placeholder="Run a scan to generate contextual CSS fixes."
+          ></textarea>
+
+          <section class="actions grid-actions">
+            <button id="applyFixesBtn" class="ghost-btn">Apply Fixes</button>
+            <button id="copyFixesBtn" class="ghost-btn">Copy CSS</button>
+            <button id="downloadFixesBtn" class="ghost-btn">Download CSS</button>
+            <button id="clearFixesBtn" class="ghost-btn">Clear Injected</button>
+          </section>
+        </section>
+      </details>
+
+      <!-- Fix Recommendations -->
+      <details class="section-collapsible" open data-section="fixRecommendations">
+        <summary class="section-summary">Fix Recommendations</summary>
+        <section class="section-body panel-block">
+          <section class="results-head">
+            <h2 data-tip-target="true" data-tip="Prioritized implementation guidance by severity, confidence, selector stability, and framework caveats.">Recommendations</h2>
+            <span id="recommendationCount" class="chip">0</span>
+          </section>
+          <p class="hint">Top recommendations include risk level, preferred channel, and framework-specific caveats.</p>
+          <section id="recommendationList" class="findings-list"></section>
+        </section>
+      </details>
+
+      <!-- Top Findings -->
+      <details class="section-collapsible" open data-section="topFindings">
+        <summary class="section-summary">Top Findings</summary>
+        <section class="section-body panel-block">
+          <section class="results-head">
+            <h2>Findings List</h2>
+            <section class="actions">
+              <button id="exportBtn" class="ghost-btn">Export JSON</button>
+              <button id="refreshHistoryBtn" class="ghost-btn">Refresh History</button>
+            </section>
+          </section>
+          <section id="findingsList" class="findings-list"></section>
+        </section>
+      </details>
+
+      <!-- Category Hotspots -->
+      <details class="section-collapsible" open data-section="categoryHotspots">
+        <summary class="section-summary">Category Hotspots</summary>
+        <section class="section-body panel-block">
+          <section class="results-head">
+            <h2>Category Breakdown</h2>
+          </section>
+          <section id="categoryList" class="findings-list"></section>
+        </section>
+      </details>
+
+      <!-- History -->
+      <details class="section-collapsible" open data-section="history">
+        <summary class="section-summary">History</summary>
+        <section class="section-body panel-block">
+          <section class="history-head">
+            <h2>Scan History</h2>
+            <button id="clearHistoryBtn" class="ghost-btn danger">Clear</button>
+          </section>
+          <section id="historyList" class="history-list"></section>
+        </section>
+      </details>
+
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="status-bar">
+      <p id="status" class="status">Ready.</p>
+    </footer>
+
+    <script src="../shared/config.js"></script>
+    <script src="../shared/utils.js"></script>
+    <script src="../shared/ui-elements.js"></script>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

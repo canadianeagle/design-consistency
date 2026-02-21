@@ -2,12 +2,17 @@
   const root = (globalThis.UIConsistency = globalThis.UIConsistency || {});
   const utils = root.utils;
 
+  /* ================================================================
+     State
+     ================================================================ */
+
   const state = {
     activeTab: null,
     config: utils.deepClone(root.DEFAULT_CONFIG),
     currentResult: null,
     currentFixCss: "",
     history: [],
+    appliedIndividualFixes: {},
     progress: {
       value: 0,
       stage: "Idle",
@@ -17,9 +22,13 @@
     }
   };
 
+  /* ================================================================
+     Element References
+     ================================================================ */
+
   const el = {
-    openSidePanelBtn: document.getElementById("openSidePanelBtn"),
     scanBtn: document.getElementById("scanBtn"),
+    resetViewBtn: document.getElementById("resetViewBtn"),
     optionsBtn: document.getElementById("optionsBtn"),
     exportBtn: document.getElementById("exportBtn"),
     refreshHistoryBtn: document.getElementById("refreshHistoryBtn"),
@@ -52,16 +61,26 @@
     frameworkPrimaryChip: document.getElementById("frameworkPrimaryChip"),
     frameworkList: document.getElementById("frameworkList"),
     recommendationCount: document.getElementById("recommendationCount"),
-    recommendationList: document.getElementById("recommendationList")
+    recommendationList: document.getElementById("recommendationList"),
+    frameworkOverride: document.getElementById("frameworkOverride"),
+    frameworkOverrideStatus: document.getElementById("frameworkOverrideStatus")
   };
+
+  /* ================================================================
+     Status
+     ================================================================ */
 
   function setStatus(text, isError) {
     el.status.textContent = text;
     el.status.style.color = isError ? "#ffd1cc" : "#afbad1";
   }
 
+  /* ================================================================
+     Scan Progress
+     ================================================================ */
+
   function toProgressLabel(stage) {
-    const map = {
+    var map = {
       start: "Boot",
       prepare: "Prep",
       collect: "Collect",
@@ -79,8 +98,8 @@
   }
 
   function setScanProgress(value, stage, detail, active) {
-    const numeric = Number.parseFloat(value);
-    const bounded = Number.isFinite(numeric)
+    var numeric = Number.parseFloat(value);
+    var bounded = Number.isFinite(numeric)
       ? Math.max(0, Math.min(100, numeric))
       : 0;
 
@@ -97,6 +116,10 @@
     el.scanLed.classList.toggle("active", !!active);
   }
 
+  /* ================================================================
+     Chrome Helpers
+     ================================================================ */
+
   function getActiveTab() {
     return new Promise(function (resolve) {
       chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
@@ -108,7 +131,7 @@
   function loadConfig() {
     return new Promise(function (resolve) {
       chrome.storage.sync.get(root.CONFIG_KEYS.sync, function (data) {
-        const stored = data && data[root.CONFIG_KEYS.sync] ? data[root.CONFIG_KEYS.sync] : {};
+        var stored = data && data[root.CONFIG_KEYS.sync] ? data[root.CONFIG_KEYS.sync] : {};
         state.config = utils.deepMerge(root.DEFAULT_CONFIG, stored);
         resolve(state.config);
       });
@@ -143,8 +166,12 @@
     });
   }
 
+  /* ================================================================
+     Overlay Helpers
+     ================================================================ */
+
   function overlayPatchFromUI() {
-    const maxVisible = Number.parseFloat(el.maxVisibleFindingsQuick.value);
+    var maxVisible = Number.parseFloat(el.maxVisibleFindingsQuick.value);
     return {
       showHighlights: !!el.toggleHighlights.checked,
       showRulers: !!el.toggleRulers.checked,
@@ -173,7 +200,7 @@
     el.toggleLabels.checked = !!overlay.showLabels;
     el.togglePanel.checked = !!overlay.showPanel;
     el.severityFilter.value = overlay.severityFilter || "all";
-    const maxVisible =
+    var maxVisible =
       Number.isFinite(Number.parseFloat(overlay.maxVisibleFindings))
         ? Math.round(Number.parseFloat(overlay.maxVisibleFindings))
         : 250;
@@ -181,41 +208,144 @@
     el.maxVisibleFindingsValue.textContent = String(maxVisible);
   }
 
+  /* ================================================================
+     Framework Override
+     ================================================================ */
+
+  function getFrameworkOverrideConfig() {
+    var selected = el.frameworkOverride.value;
+    var isAuto = selected === "auto";
+    return {
+      enabled: !isAuto,
+      primaryFramework: selected,
+      preferredChannels: []
+    };
+  }
+
+  function syncFrameworkOverrideStatus() {
+    var selected = el.frameworkOverride.value;
+    if (selected === "auto") {
+      el.frameworkOverrideStatus.textContent = "Override: off (auto-detect active)";
+      el.frameworkOverrideStatus.style.color = "#9ea8bf";
+    } else {
+      var label = el.frameworkOverride.options[el.frameworkOverride.selectedIndex].text;
+      el.frameworkOverrideStatus.textContent = "Override: " + label + " (manual)";
+      el.frameworkOverrideStatus.style.color = "#c6f8f0";
+    }
+  }
+
+  function restoreFrameworkOverride() {
+    var overrideCfg = state.config.frameworkOverride;
+    if (overrideCfg && overrideCfg.enabled && overrideCfg.primaryFramework !== "auto") {
+      el.frameworkOverride.value = overrideCfg.primaryFramework;
+    } else {
+      el.frameworkOverride.value = "auto";
+    }
+    syncFrameworkOverrideStatus();
+  }
+
+  function saveFrameworkOverrideToConfig() {
+    var overrideCfg = getFrameworkOverrideConfig();
+    state.config.frameworkOverride = overrideCfg;
+
+    var payload = {};
+    payload[root.CONFIG_KEYS.sync] = state.config;
+    chrome.storage.sync.set(payload);
+  }
+
+  /* ================================================================
+     Collapsible Section State Persistence
+     ================================================================ */
+
+  var SECTION_STATE_KEY = "uiConsistencySidepanelSections";
+
+  function persistCollapsibleState() {
+    var sections = document.querySelectorAll(".section-collapsible[data-section]");
+    var sectionState = {};
+    sections.forEach(function (details) {
+      sectionState[details.dataset.section] = details.open;
+    });
+    var storageObj = {};
+    storageObj[SECTION_STATE_KEY] = sectionState;
+    chrome.storage.local.set(storageObj);
+  }
+
+  function restoreCollapsibleState() {
+    return new Promise(function (resolve) {
+      chrome.storage.local.get(SECTION_STATE_KEY, function (data) {
+        var sectionState = data && data[SECTION_STATE_KEY] ? data[SECTION_STATE_KEY] : null;
+        if (!sectionState) {
+          resolve();
+          return;
+        }
+        var sections = document.querySelectorAll(".section-collapsible[data-section]");
+        sections.forEach(function (details) {
+          var key = details.dataset.section;
+          if (key in sectionState) {
+            details.open = !!sectionState[key];
+          }
+        });
+        resolve();
+      });
+    });
+  }
+
+  function bindCollapsibleToggle() {
+    var sections = document.querySelectorAll(".section-collapsible[data-section]");
+    sections.forEach(function (details) {
+      details.addEventListener("toggle", function () {
+        persistCollapsibleState();
+      });
+    });
+  }
+
+  /* ================================================================
+     Render: Summary
+     ================================================================ */
+
   function renderSummary(result) {
-    const summary = result && result.summary
+    var summary = result && result.summary
       ? result.summary
       : { consistencyScore: "-", total: "-", critical: 0, high: 0, medium: 0, low: 0 };
-    const meta = result && result.meta ? result.meta : { inspectedElements: "-" };
+    var meta = result && result.meta ? result.meta : { inspectedElements: "-" };
 
     el.score.textContent = summary.consistencyScore;
     el.findingsTotal.textContent = summary.total;
     el.elementsTotal.textContent = meta.inspectedElements;
   }
 
+  /* ================================================================
+     Render: Fixes
+     ================================================================ */
+
   function renderFixes(result) {
-    const fixes = result && result.fixes
+    var fixes = result && result.fixes
       ? result.fixes
       : { cssText: "", rules: [], disabled: false };
     state.currentFixCss = String(fixes.cssText || "");
 
-    const ruleCount = Array.isArray(fixes.rules) ? fixes.rules.length : 0;
+    var ruleCount = Array.isArray(fixes.rules) ? fixes.rules.length : 0;
     el.fixRuleCount.textContent = ruleCount + " rule" + (ruleCount === 1 ? "" : "s");
     el.fixCssPreview.value = fixes.disabled
       ? "Fix generation is disabled in Advanced Config > Auto Fix Generator."
       : state.currentFixCss;
 
-    const hasFixes = state.currentFixCss.trim().length > 0;
+    var hasFixes = state.currentFixCss.trim().length > 0;
     el.applyFixesBtn.disabled = !hasFixes;
     el.copyFixesBtn.disabled = !hasFixes;
     el.downloadFixesBtn.disabled = !hasFixes;
   }
 
+  /* ================================================================
+     Render: Framework Profile
+     ================================================================ */
+
   function frameworkReportFromResult(result) {
-    const fromResult = result && result.frameworks ? result.frameworks : null;
-    const fromFixes = result && result.fixes && result.fixes.frameworkProfile
+    var fromResult = result && result.frameworks ? result.frameworks : null;
+    var fromFixes = result && result.fixes && result.fixes.frameworkProfile
       ? result.fixes.frameworkProfile
       : null;
-    const report = fromResult || fromFixes || null;
+    var report = fromResult || fromFixes || null;
     if (!report) {
       return {
         primary: null,
@@ -230,48 +360,68 @@
     };
   }
 
+  function clearContainer(container) {
+    while (container.firstChild) {
+      container.removeChild(container.firstChild);
+    }
+  }
+
   function renderFrameworkProfile(result) {
-    const report = frameworkReportFromResult(result);
-    el.frameworkList.innerHTML = "";
+    var report = frameworkReportFromResult(result);
+    clearContainer(el.frameworkList);
+
+    var overrideCfg = getFrameworkOverrideConfig();
 
     if (!report.primary && !report.detected.length) {
-      el.frameworkPrimaryChip.textContent = "Unknown";
-      const empty = document.createElement("article");
+      el.frameworkPrimaryChip.textContent = overrideCfg.enabled
+        ? el.frameworkOverride.options[el.frameworkOverride.selectedIndex].text + " (override)"
+        : "Unknown";
+
+      var empty = document.createElement("article");
       empty.className = "framework-card";
-      const title = document.createElement("div");
+      var title = document.createElement("div");
       title.className = "framework-name";
-      title.textContent = "No strong framework signature";
-      const meta = document.createElement("div");
+      title.textContent = overrideCfg.enabled
+        ? "Manual override active: " + el.frameworkOverride.options[el.frameworkOverride.selectedIndex].text
+        : "No strong framework signature";
+      var meta = document.createElement("div");
       meta.className = "framework-meta";
-      meta.textContent =
-        "Scan a richer surface or increase selector coverage in Advanced Config.";
+      meta.textContent = overrideCfg.enabled
+        ? "Recommendations will target " + el.frameworkOverride.options[el.frameworkOverride.selectedIndex].text + " patterns."
+        : "Scan a richer surface or increase selector coverage in Advanced Config.";
       empty.appendChild(title);
       empty.appendChild(meta);
       el.frameworkList.appendChild(empty);
       return;
     }
 
-    const primaryLabel = report.primary
+    var primaryLabel = report.primary
       ? String(report.primary.name || report.primary.id || "Unknown")
       : "Unknown";
-    const primaryConfidence = report.primary
+    var primaryConfidence = report.primary
       ? Number.parseFloat(report.primary.confidence) || 0
       : 0;
-    el.frameworkPrimaryChip.textContent =
-      primaryLabel + " " + Math.round(primaryConfidence * 100) + "%";
+
+    if (overrideCfg.enabled) {
+      el.frameworkPrimaryChip.textContent =
+        el.frameworkOverride.options[el.frameworkOverride.selectedIndex].text + " (override)";
+    } else {
+      el.frameworkPrimaryChip.textContent =
+        primaryLabel + " " + Math.round(primaryConfidence * 100) + "%";
+    }
 
     report.detected.slice(0, 5).forEach(function (framework) {
-      const card = document.createElement("article");
+      var card = document.createElement("article");
       card.className = "framework-card";
 
-      const head = document.createElement("div");
+      var head = document.createElement("div");
       head.className = "framework-head";
 
-      const name = document.createElement("div");
+      var name = document.createElement("div");
       name.className = "framework-name";
       name.textContent = String(framework.name || framework.id || "Unknown");
 
-      const confidence = document.createElement("div");
+      var confidence = document.createElement("div");
       confidence.className = "framework-confidence";
       confidence.textContent =
         Math.round((Number.parseFloat(framework.confidence) || 0) * 100) + "%";
@@ -279,25 +429,25 @@
       head.appendChild(name);
       head.appendChild(confidence);
 
-      const meta = document.createElement("div");
-      meta.className = "framework-meta";
-      const channelText = Array.isArray(framework.preferredChannels)
+      var fwMeta = document.createElement("div");
+      fwMeta.className = "framework-meta";
+      var channelText = Array.isArray(framework.preferredChannels)
         ? framework.preferredChannels.slice(0, 2).join(" | ")
         : "scoped-css";
-      meta.textContent = "Preferred channels: " + channelText;
+      fwMeta.textContent = "Preferred channels: " + channelText;
 
-      const caveat = document.createElement("div");
+      var caveat = document.createElement("div");
       caveat.className = "framework-caveat";
       caveat.textContent = String(
         framework.caveat || "No caveat captured for this framework."
       );
 
       card.appendChild(head);
-      card.appendChild(meta);
+      card.appendChild(fwMeta);
       card.appendChild(caveat);
 
       if (Array.isArray(framework.evidence) && framework.evidence.length) {
-        const evidence = document.createElement("div");
+        var evidence = document.createElement("div");
         evidence.className = "framework-meta";
         evidence.textContent =
           "Evidence: " + framework.evidence.slice(0, 2).join(" | ");
@@ -308,8 +458,44 @@
     });
   }
 
+  /* ================================================================
+     Render: Recommendations (Enhanced)
+     ================================================================ */
+
+  function buildCssSnippetForRec(rec) {
+    var selector = String(rec.selector || "/* unknown */");
+    var declarations = Array.isArray(rec.declarations) ? rec.declarations : [];
+    if (!declarations.length) {
+      return "";
+    }
+    var lines = [selector + " {"];
+    declarations.forEach(function (decl) {
+      lines.push("  " + String(decl.property || "") + ": " + String(decl.value || "") + ";");
+    });
+    lines.push("}");
+    return lines.join("\n");
+  }
+
+  function buildIndividualFixCss(rec) {
+    var selector = String(rec.selector || "");
+    var declarations = Array.isArray(rec.declarations) ? rec.declarations : [];
+    if (!selector || !declarations.length) {
+      return "";
+    }
+    var lines = [selector + " {"];
+    declarations.forEach(function (decl) {
+      var prop = String(decl.property || "");
+      var val = String(decl.value || "");
+      if (prop && val) {
+        lines.push("  " + prop + ": " + val + " !important;");
+      }
+    });
+    lines.push("}");
+    return lines.join("\n");
+  }
+
   function renderRecommendations(result) {
-    const recommendations =
+    var recommendations =
       result &&
       result.fixes &&
       result.fixes.recommendations &&
@@ -320,32 +506,33 @@
             top: [],
             channelDistribution: []
           };
-    const top = recommendations.top.slice(0, 10);
-    el.recommendationList.innerHTML = "";
+    var top = recommendations.top.slice(0, 10);
+    clearContainer(el.recommendationList);
     el.recommendationCount.textContent = String(top.length);
 
     if (!top.length) {
-      const empty = document.createElement("div");
-      empty.className = "card";
-      empty.dataset.severity = "low";
-      const title = document.createElement("div");
-      title.className = "title";
-      title.textContent = "No fix recommendations available yet.";
-      const detail = document.createElement("div");
-      detail.className = "delta";
-      detail.textContent = "Run a scan with Auto CSS Fixes enabled.";
-      empty.appendChild(title);
-      empty.appendChild(detail);
-      el.recommendationList.appendChild(empty);
+      var emptyCard = document.createElement("div");
+      emptyCard.className = "card";
+      emptyCard.dataset.severity = "low";
+      var emptyTitle = document.createElement("div");
+      emptyTitle.className = "title";
+      emptyTitle.textContent = "No fix recommendations available yet.";
+      var emptyDetail = document.createElement("div");
+      emptyDetail.className = "delta";
+      emptyDetail.textContent = "Run a scan with Auto CSS Fixes enabled.";
+      emptyCard.appendChild(emptyTitle);
+      emptyCard.appendChild(emptyDetail);
+      el.recommendationList.appendChild(emptyCard);
       return;
     }
 
-    top.forEach(function (rec) {
-      const card = document.createElement("article");
+    top.forEach(function (rec, index) {
+      var card = document.createElement("article");
       card.className = "card recommendation-card";
       card.dataset.severity = String(rec.severity || "medium");
 
-      const meta = document.createElement("div");
+      /* Meta line */
+      var meta = document.createElement("div");
       meta.className = "meta";
       meta.textContent =
         String(rec.severity || "medium").toUpperCase() +
@@ -354,104 +541,216 @@
         " | score " +
         String(rec.priority || "-");
 
-      const title = document.createElement("div");
+      /* Selector title */
+      var title = document.createElement("div");
       title.className = "title";
       title.textContent = String(rec.selector || "(selector unavailable)");
 
-      const chipRow = document.createElement("div");
+      /* Chip row: risk, channel, confidence */
+      var chipRow = document.createElement("div");
       chipRow.className = "recommendation-chip-row";
 
-      const riskChip = document.createElement("span");
+      var riskChip = document.createElement("span");
       riskChip.className = "mini-chip risk-" + String(rec.risk || "medium");
       riskChip.textContent = "risk " + String(rec.risk || "medium");
       chipRow.appendChild(riskChip);
 
-      const channelChip = document.createElement("span");
+      var channelChip = document.createElement("span");
       channelChip.className = "mini-chip";
-      const firstChannel =
+      var firstChannel =
         Array.isArray(rec.channels) && rec.channels.length
           ? rec.channels[0]
           : "scoped-css";
       channelChip.textContent = firstChannel;
       chipRow.appendChild(channelChip);
 
-      const confidenceChip = document.createElement("span");
+      var confidenceChip = document.createElement("span");
       confidenceChip.className = "mini-chip";
       confidenceChip.textContent =
         "conf " + String(rec.confidence || 0) + " | stable " + String(rec.stability || 0);
       chipRow.appendChild(confidenceChip);
 
-      const decl = document.createElement("div");
+      card.appendChild(meta);
+      card.appendChild(title);
+      card.appendChild(chipRow);
+
+      /* Before/After property values */
+      var declarations = Array.isArray(rec.declarations) ? rec.declarations : [];
+      if (declarations.length) {
+        var propDelta = document.createElement("div");
+        propDelta.className = "rec-property-delta";
+
+        declarations.slice(0, 4).forEach(function (decl) {
+          var propLabel = document.createElement("span");
+          propLabel.className = "prop-label";
+          propLabel.textContent = String(decl.property || "");
+
+          var beforeVal = document.createElement("span");
+          beforeVal.className = "prop-value prop-before";
+          beforeVal.textContent = String(decl.actual || decl.from || "n/a");
+
+          var afterLabel = document.createElement("span");
+          afterLabel.className = "prop-label";
+          afterLabel.textContent = "";
+
+          var afterVal = document.createElement("span");
+          afterVal.className = "prop-value prop-after";
+          afterVal.textContent = String(decl.value || "");
+
+          propDelta.appendChild(propLabel);
+          propDelta.appendChild(beforeVal);
+          propDelta.appendChild(afterLabel);
+          propDelta.appendChild(afterVal);
+        });
+
+        card.appendChild(propDelta);
+      }
+
+      /* Declarations summary */
+      var decl = document.createElement("div");
       decl.className = "delta";
-      const declarationPreview = Array.isArray(rec.declarations)
-        ? rec.declarations
-            .slice(0, 3)
-            .map(function (item) {
-              return String(item.property || "") + ": " + String(item.value || "");
-            })
-            .join("; ")
-        : "";
+      var declarationPreview = declarations
+        .slice(0, 3)
+        .map(function (item) {
+          return String(item.property || "") + ": " + String(item.value || "");
+        })
+        .join("; ");
       decl.textContent =
         "Patch: " +
         (declarationPreview || "No declaration preview") +
         " | issues " +
         String(rec.issueCount || 0);
-
-      const guidance = document.createElement("div");
-      guidance.className = "delta";
-      guidance.textContent = "Guidance: " + String(rec.guidance || "");
-
-      card.appendChild(meta);
-      card.appendChild(title);
-      card.appendChild(chipRow);
       card.appendChild(decl);
-      card.appendChild(guidance);
 
-      if (rec.caveat) {
-        const caveat = document.createElement("div");
-        caveat.className = "delta";
-        caveat.textContent = "Caveat: " + String(rec.caveat);
-        card.appendChild(caveat);
+      /* Code snippet */
+      var snippet = buildCssSnippetForRec(rec);
+      if (snippet) {
+        var codeBlock = document.createElement("div");
+        codeBlock.className = "rec-code-snippet";
+        codeBlock.textContent = snippet;
+        card.appendChild(codeBlock);
       }
+
+      /* Guidance */
+      if (rec.guidance) {
+        var guidance = document.createElement("div");
+        guidance.className = "rec-guidance";
+        guidance.textContent = String(rec.guidance);
+        card.appendChild(guidance);
+      }
+
+      /* Framework-specific implementation guidance */
+      if (rec.implementationHint) {
+        var implHint = document.createElement("div");
+        implHint.className = "rec-guidance";
+        implHint.textContent = "Implementation: " + String(rec.implementationHint);
+        card.appendChild(implHint);
+      }
+
+      /* Caveat */
+      if (rec.caveat) {
+        var caveatEl = document.createElement("div");
+        caveatEl.className = "rec-caveat";
+        caveatEl.textContent = "Caveat: " + String(rec.caveat);
+        card.appendChild(caveatEl);
+      }
+
+      /* Apply This Fix button */
+      var fixId = "rec-fix-" + index;
+      var applyBtn = document.createElement("button");
+      applyBtn.className = "apply-fix-btn";
+      applyBtn.dataset.fixId = fixId;
+      applyBtn.dataset.recIndex = String(index);
+
+      if (state.appliedIndividualFixes[fixId]) {
+        applyBtn.textContent = "Applied";
+        applyBtn.classList.add("applied");
+        applyBtn.disabled = true;
+      } else {
+        applyBtn.textContent = "Apply This Fix";
+      }
+
+      applyBtn.addEventListener("click", function () {
+        applyIndividualFix(rec, fixId, applyBtn);
+      });
+
+      card.appendChild(applyBtn);
 
       el.recommendationList.appendChild(card);
     });
   }
 
+  /* ================================================================
+     Apply Individual Fix
+     ================================================================ */
+
+  async function applyIndividualFix(rec, fixId, buttonEl) {
+    var cssText = buildIndividualFixCss(rec);
+    if (!cssText) {
+      setStatus("No CSS could be generated for this recommendation.", true);
+      return;
+    }
+
+    try {
+      var response = await sendToTab({
+        type: "ui-consistency:apply-fixes",
+        payload: {
+          cssText: cssText
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(response.error || "Failed to apply individual fix.");
+      }
+
+      state.appliedIndividualFixes[fixId] = true;
+      buttonEl.textContent = "Applied";
+      buttonEl.classList.add("applied");
+      buttonEl.disabled = true;
+      setStatus("Applied individual fix: " + String(rec.selector || fixId), false);
+    } catch (error) {
+      setStatus("Failed to apply fix: " + error.message, true);
+    }
+  }
+
+  /* ================================================================
+     Render: Category Breakdown
+     ================================================================ */
+
   function renderCategoryBreakdown(result) {
-    el.categoryList.innerHTML = "";
+    clearContainer(el.categoryList);
 
     if (!result || !result.breakdown || !result.breakdown.byCategory) {
-      const empty = document.createElement("div");
+      var empty = document.createElement("div");
       empty.className = "history-card";
       empty.textContent = "No category data yet.";
       el.categoryList.appendChild(empty);
       return;
     }
 
-    const entries = Object.entries(result.breakdown.byCategory)
+    var entries = Object.entries(result.breakdown.byCategory)
       .sort(function (a, b) {
         return b[1] - a[1];
       })
       .slice(0, 8);
 
     if (!entries.length) {
-      const empty = document.createElement("div");
-      empty.className = "history-card";
-      empty.textContent = "No category findings.";
-      el.categoryList.appendChild(empty);
+      var emptyCard = document.createElement("div");
+      emptyCard.className = "history-card";
+      emptyCard.textContent = "No category findings.";
+      el.categoryList.appendChild(emptyCard);
       return;
     }
 
     entries.forEach(function (entry) {
-      const card = document.createElement("article");
+      var card = document.createElement("article");
       card.className = "history-card";
 
-      const title = document.createElement("div");
+      var title = document.createElement("div");
       title.className = "meta";
       title.textContent = entry[0];
 
-      const count = document.createElement("div");
+      var count = document.createElement("div");
       count.className = "title";
       count.textContent = String(entry[1]) + " findings";
 
@@ -461,19 +760,23 @@
     });
   }
 
+  /* ================================================================
+     Render: Findings
+     ================================================================ */
+
   function renderFindings(result) {
-    el.findingsList.innerHTML = "";
+    clearContainer(el.findingsList);
 
     if (!result || !Array.isArray(result.findings) || result.findings.length === 0) {
-      const clean = document.createElement("div");
+      var clean = document.createElement("div");
       clean.className = "card";
       clean.dataset.severity = "low";
 
-      const cleanMeta = document.createElement("div");
+      var cleanMeta = document.createElement("div");
       cleanMeta.className = "meta";
       cleanMeta.textContent = "No Findings";
 
-      const cleanTitle = document.createElement("div");
+      var cleanTitle = document.createElement("div");
       cleanTitle.className = "title";
       cleanTitle.textContent = "No major inconsistencies detected with current thresholds.";
 
@@ -484,27 +787,27 @@
     }
 
     result.findings.slice(0, 30).forEach(function (finding) {
-      const card = document.createElement("article");
+      var card = document.createElement("article");
       card.className = "card";
       card.dataset.severity = String(finding.severity || "medium");
 
-      const meta = document.createElement("div");
+      var meta = document.createElement("div");
       meta.className = "meta";
       meta.textContent =
         String(finding.severity || "medium").toUpperCase() +
         " | " +
         String(finding.ruleId || "");
 
-      const title = document.createElement("div");
+      var title = document.createElement("div");
       title.className = "title";
       title.textContent = String(finding.message || "");
 
-      const delta = document.createElement("div");
+      var delta = document.createElement("div");
       delta.className = "delta";
       delta.textContent =
         "Expected: " + String(finding.expected) + " | Actual: " + String(finding.actual);
 
-      const selector = document.createElement("div");
+      var selector = document.createElement("div");
       selector.className = "delta";
       selector.textContent = "Target: " + String(finding.selector || "(unknown)");
 
@@ -514,9 +817,9 @@
       card.appendChild(selector);
 
       if (finding.sourceHint && finding.sourceHint.property) {
-        const hint = document.createElement("div");
+        var hint = document.createElement("div");
         hint.className = "delta";
-        const firstMatch =
+        var firstMatch =
           Array.isArray(finding.sourceHint.matches) && finding.sourceHint.matches.length
             ? finding.sourceHint.matches[0]
             : null;
@@ -542,14 +845,14 @@
         Array.isArray(finding.metadata.suggestedFixes) &&
         finding.metadata.suggestedFixes.length
       ) {
-        const contextual = document.createElement("div");
+        var contextual = document.createElement("div");
         contextual.className = "delta";
         contextual.textContent =
           "Context fixes: " +
           finding.metadata.suggestedFixes
             .slice(0, 2)
-            .map(function (hint) {
-              return String(hint.property || "") + "=" + String(hint.value || "");
+            .map(function (fixHint) {
+              return String(fixHint.property || "") + "=" + String(fixHint.value || "");
             })
             .join(" | ");
         card.appendChild(contextual);
@@ -558,6 +861,10 @@
       el.findingsList.appendChild(card);
     });
   }
+
+  /* ================================================================
+     History
+     ================================================================ */
 
   async function saveHistory(packaged) {
     try {
@@ -580,7 +887,7 @@
 
   async function loadHistory() {
     try {
-      const response = await sendToRuntime({ type: "ui-consistency:get-history" });
+      var response = await sendToRuntime({ type: "ui-consistency:get-history" });
       if (!response.ok) {
         throw new Error(response.error || "Unable to load history");
       }
@@ -596,7 +903,7 @@
       return "";
     }
     try {
-      const parsed = new URL(value);
+      var parsed = new URL(value);
       return parsed.origin + parsed.pathname;
     } catch (error) {
       return String(value);
@@ -604,37 +911,37 @@
   }
 
   function handleProgressMessage(payload) {
-    const data = payload || {};
-    const activeUrl = normalizeUrlForMatch(state.activeTab && state.activeTab.url);
-    const payloadUrl = normalizeUrlForMatch(data.url);
+    var data = payload || {};
+    var activeUrl = normalizeUrlForMatch(state.activeTab && state.activeTab.url);
+    var payloadUrl = normalizeUrlForMatch(data.url);
     if (activeUrl && payloadUrl && activeUrl !== payloadUrl) {
       return;
     }
 
-    const stage = String(data.stage || "").toLowerCase();
-    const active = stage !== "complete" && stage !== "done" && stage !== "error";
+    var stage = String(data.stage || "").toLowerCase();
+    var active = stage !== "complete" && stage !== "done" && stage !== "error";
     setScanProgress(data.value, stage, data.detail, active);
   }
 
   function createHistoryCard(entry) {
-    const node = document.createElement("article");
+    var node = document.createElement("article");
     node.className = "history-card";
 
-    const url = entry.url ? entry.url.replace(/^https?:\/\//, "") : "";
+    var url = entry.url ? entry.url.replace(/^https?:\/\//, "") : "";
 
-    const meta = document.createElement("div");
+    var meta = document.createElement("div");
     meta.className = "meta";
     meta.textContent = formatTime(entry.scannedAt);
 
-    const title = document.createElement("div");
+    var title = document.createElement("div");
     title.className = "title";
     title.textContent = entry.title || "Untitled";
 
-    const compactUrl = document.createElement("div");
+    var compactUrl = document.createElement("div");
     compactUrl.className = "delta";
     compactUrl.textContent = url.slice(0, 72);
 
-    const score = document.createElement("div");
+    var score = document.createElement("div");
     score.className = "delta";
     score.textContent =
       "Score: " +
@@ -647,7 +954,7 @@
     node.appendChild(compactUrl);
     node.appendChild(score);
 
-    const button = document.createElement("button");
+    var button = document.createElement("button");
     button.className = "ghost-btn";
     button.textContent = "Show This Scan Overlay";
     button.addEventListener("click", function () {
@@ -659,29 +966,29 @@
   }
 
   function renderHistory() {
-    el.historyList.innerHTML = "";
+    clearContainer(el.historyList);
 
-    const currentUrl = state.activeTab && state.activeTab.url ? state.activeTab.url : "";
-    const preferred = state.history
+    var currentUrl = state.activeTab && state.activeTab.url ? state.activeTab.url : "";
+    var preferred = state.history
       .filter(function (entry) {
         return entry.url === currentUrl;
       })
       .slice(0, 4);
 
-    const fallback = state.history
+    var fallback = state.history
       .filter(function (entry) {
         return entry.url !== currentUrl;
       })
       .slice(0, 6);
 
-    const combined = preferred.concat(fallback);
+    var combined = preferred.concat(fallback);
     if (!combined.length) {
-      const empty = document.createElement("div");
+      var empty = document.createElement("div");
       empty.className = "history-card";
-      const title = document.createElement("div");
-      title.className = "title";
-      title.textContent = "No scan history yet.";
-      empty.appendChild(title);
+      var emptyTitle = document.createElement("div");
+      emptyTitle.className = "title";
+      emptyTitle.textContent = "No scan history yet.";
+      empty.appendChild(emptyTitle);
       el.historyList.appendChild(empty);
       return;
     }
@@ -691,6 +998,10 @@
     });
   }
 
+  /* ================================================================
+     Composite Render
+     ================================================================ */
+
   function applyResultToUI(result) {
     renderSummary(result);
     renderFrameworkProfile(result);
@@ -699,6 +1010,10 @@
     renderCategoryBreakdown(result);
     renderFixes(result);
   }
+
+  /* ================================================================
+     Show History Entry
+     ================================================================ */
 
   async function showHistoryEntry(entry) {
     try {
@@ -732,6 +1047,10 @@
     }
   }
 
+  /* ================================================================
+     Actions: Run Scan
+     ================================================================ */
+
   async function runScan() {
     try {
       el.scanBtn.disabled = true;
@@ -739,13 +1058,21 @@
       setScanProgress(2, "start", "Initializing scan", true);
       setStatus("Scanning current page. Large pages can take a few seconds.", false);
 
-      const overlayPatch = overlayPatchFromUI();
+      /* Reset individual fix tracking for new scan */
+      state.appliedIndividualFixes = {};
+
+      var overlayPatch = overlayPatchFromUI();
       state.config.overlay = utils.deepMerge(state.config.overlay, overlayPatch);
 
-      const response = await sendToTab({
+      /* Build framework override config */
+      var frameworkOverrideCfg = getFrameworkOverrideConfig();
+      state.config.frameworkOverride = frameworkOverrideCfg;
+
+      var response = await sendToTab({
         type: "ui-consistency:run-scan",
         config: {
-          overlay: overlayPatch
+          overlay: overlayPatch,
+          frameworkOverride: frameworkOverrideCfg
         }
       });
 
@@ -753,7 +1080,7 @@
         throw new Error(response.error || "Scan failed.");
       }
 
-      const packaged = response.payload;
+      var packaged = response.payload;
       state.currentResult = packaged;
       applyResultToUI(packaged.result);
 
@@ -777,6 +1104,10 @@
     }
   }
 
+  /* ================================================================
+     Actions: Overlay
+     ================================================================ */
+
   async function updateOverlay() {
     try {
       await sendToTab({
@@ -792,6 +1123,10 @@
     }
   }
 
+  /* ================================================================
+     Actions: Apply / Copy / Download / Clear Fixes
+     ================================================================ */
+
   async function applyFixes() {
     if (!state.currentFixCss.trim()) {
       setStatus("No generated CSS fixes available. Run a scan first.", true);
@@ -799,7 +1134,7 @@
     }
 
     try {
-      const response = await sendToTab({
+      var response = await sendToTab({
         type: "ui-consistency:apply-fixes",
         payload: {
           cssText: state.currentFixCss
@@ -818,11 +1153,19 @@
 
   async function clearInjectedFixes() {
     try {
-      const response = await sendToTab({ type: "ui-consistency:clear-fixes" });
+      var response = await sendToTab({ type: "ui-consistency:clear-fixes" });
       if (!response.ok) {
         throw new Error(response.error || "Failed to clear fixes.");
       }
+
+      /* Reset applied individual fixes tracking */
+      state.appliedIndividualFixes = {};
       setStatus("Cleared injected fix CSS from the page.", false);
+
+      /* Re-render recommendations to reset button states */
+      if (state.currentResult && state.currentResult.result) {
+        renderRecommendations(state.currentResult.result);
+      }
     } catch (error) {
       setStatus("Clear fixes failed: " + error.message, true);
     }
@@ -830,13 +1173,14 @@
 
   async function resetView() {
     try {
-      const response = await sendToTab({ type: "ui-consistency:reset-view" });
+      var response = await sendToTab({ type: "ui-consistency:reset-view" });
       if (!response.ok) {
         throw new Error(response.error || "Failed to reset view.");
       }
 
       state.currentResult = null;
       state.currentFixCss = "";
+      state.appliedIndividualFixes = {};
       applyResultToUI(null);
       setScanProgress(0, "idle", "View reset", false);
       setStatus("Overlay hidden and page state reset for this tab.", false);
@@ -865,11 +1209,11 @@
       return;
     }
 
-    const blob = new Blob([state.currentFixCss], {
+    var blob = new Blob([state.currentFixCss], {
       type: "text/css;charset=utf-8"
     });
-    const href = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
+    var href = URL.createObjectURL(blob);
+    var anchor = document.createElement("a");
     anchor.href = href;
     anchor.download = "ui-consistency-fixes-" + Date.now() + ".css";
     anchor.click();
@@ -883,11 +1227,11 @@
       return;
     }
 
-    const blob = new Blob([JSON.stringify(state.currentResult, null, 2)], {
+    var blob = new Blob([JSON.stringify(state.currentResult, null, 2)], {
       type: "application/json"
     });
-    const href = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
+    var href = URL.createObjectURL(blob);
+    var anchor = document.createElement("a");
     anchor.href = href;
     anchor.download = "ui-consistency-scan-" + Date.now() + ".json";
     anchor.click();
@@ -906,35 +1250,65 @@
     }
   }
 
+  /* ================================================================
+     Tab Change Listener (side panel stays open across tabs)
+     ================================================================ */
+
+  function listenForTabChanges() {
+    if (chrome.tabs && chrome.tabs.onActivated) {
+      chrome.tabs.onActivated.addListener(async function () {
+        state.activeTab = await getActiveTab();
+        await loadHistory();
+      });
+    }
+  }
+
+  /* ================================================================
+     Init
+     ================================================================ */
+
   async function init() {
+    /* Enhance form controls with custom elements */
     if (globalThis.UIConsistencyUI && typeof globalThis.UIConsistencyUI.enhanceFormControls === "function") {
       globalThis.UIConsistencyUI.enhanceFormControls(document);
     }
 
+    /* Restore collapsible section state */
+    await restoreCollapsibleState();
+    bindCollapsibleToggle();
+
+    /* Get active tab and config */
     state.activeTab = await getActiveTab();
     await loadConfig();
+
+    /* Restore UI from config */
     setOverlayUI(state.config.overlay);
+    restoreFrameworkOverride();
     setScanProgress(0, "idle", "Ready for scan", false);
     applyResultToUI(null);
     await loadHistory();
 
-    el.openSidePanelBtn.addEventListener("click", function () {
-      chrome.runtime.sendMessage({ type: "ui-consistency:open-side-panel" });
-      window.close();
-    });
+    /* ---- Event Bindings ---- */
+
+    /* Scan controls */
     el.scanBtn.addEventListener("click", runScan);
+    el.resetViewBtn.addEventListener("click", resetView);
     el.optionsBtn.addEventListener("click", function () {
       chrome.runtime.openOptionsPage();
     });
+
+    /* Export / History */
     el.exportBtn.addEventListener("click", exportJson);
     el.refreshHistoryBtn.addEventListener("click", loadHistory);
     el.clearHistoryBtn.addEventListener("click", clearHistory);
 
+    /* Fix actions */
     el.applyFixesBtn.addEventListener("click", applyFixes);
     el.copyFixesBtn.addEventListener("click", copyFixes);
     el.downloadFixesBtn.addEventListener("click", downloadFixes);
     el.clearFixesBtn.addEventListener("click", clearInjectedFixes);
 
+    /* Overlay toggles */
     [
       el.toggleHighlights,
       el.toggleRulers,
@@ -952,12 +1326,22 @@
     });
     el.maxVisibleFindingsQuick.addEventListener("change", updateOverlay);
 
+    /* Framework override dropdown */
+    el.frameworkOverride.addEventListener("change", function () {
+      syncFrameworkOverrideStatus();
+      saveFrameworkOverrideToConfig();
+    });
+
+    /* Progress messages from background/content scripts */
     chrome.runtime.onMessage.addListener(function (message) {
       if (!message || message.type !== "ui-consistency:scan-progress") {
         return;
       }
       handleProgressMessage(message.payload || {});
     });
+
+    /* Tab change awareness */
+    listenForTabChanges();
 
     setStatus("Ready. Run a scan to generate findings and fix CSS.", false);
   }

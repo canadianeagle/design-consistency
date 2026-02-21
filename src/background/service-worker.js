@@ -290,8 +290,20 @@ async function getHistoryFor(url) {
   });
 }
 
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(function () {});
+
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
   if (!message || !message.type) {
+    return;
+  }
+
+  if (message.type === "ui-consistency:open-side-panel") {
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      if (tabs && tabs[0]) {
+        chrome.sidePanel.open({ windowId: tabs[0].windowId }).catch(function () {});
+      }
+    });
+    sendResponse({ ok: true });
     return;
   }
 

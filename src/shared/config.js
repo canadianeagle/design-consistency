@@ -108,6 +108,11 @@
       includeHtmlSnippet: true,
       includeSourceHints: true,
       includeComputedSnapshot: false
+    },
+    frameworkOverride: {
+      enabled: false,
+      primaryFramework: "auto",
+      preferredChannels: []
     }
   };
 

@@ -24,6 +24,16 @@
         </div>
       </header>
 
+      <section class="panel-block launch-panel">
+        <h2>Quick Actions</h2>
+        <p class="hint">Use the side panel for the full-featured experience with more space.</p>
+        <section class="control-grid">
+          <button id="openSidePanelBtn" class="scan-btn" title="Open the full side panel for more space and features">Open Side Panel</button>
+          <button id="scanBtn" class="ghost-btn" title="Quick scan from popup">Quick Scan</button>
+          <button id="optionsBtn" class="ghost-btn" title="Open advanced configuration and custom rule builder">Advanced Config</button>
+        </section>
+      </section>
+
       <section class="panel-block scan-panel">
         <section class="scan-row">
           <span class="scan-led" id="scanLed" aria-hidden="true"></span>
@@ -43,10 +53,19 @@
         </section>
       </section>
 
-      <section class="control-grid">
-        <button id="scanBtn" class="scan-btn" title="Run a full scan of the current tab">Run Granular Scan</button>
-        <button id="resetViewBtn" class="ghost-btn" title="Hide overlays and clear injected fixes on this page">Reset View</button>
-        <button id="optionsBtn" class="ghost-btn" title="Open advanced configuration and custom rule builder">Advanced Config</button>
+      <section class="summary" id="summary">
+        <article>
+          <p>Score</p>
+          <strong id="score">-</strong>
+        </article>
+        <article>
+          <p>Findings</p>
+          <strong id="findingsTotal">-</strong>
+        </article>
+        <article>
+          <p>Elements</p>
+          <strong id="elementsTotal">-</strong>
+        </article>
       </section>
 
       <section class="panel-block">
@@ -82,27 +101,12 @@
         </section>
       </section>
 
-      <section class="summary" id="summary">
-        <article>
-          <p>Score</p>
-          <strong id="score">-</strong>
-        </article>
-        <article>
-          <p>Findings</p>
-          <strong id="findingsTotal">-</strong>
-        </article>
-        <article>
-          <p>Elements</p>
-          <strong id="elementsTotal">-</strong>
-        </article>
-      </section>
-
       <section class="panel-block">
         <section class="results-head">
           <h2 data-tip-target="true" data-tip="Framework fingerprinting analyzes class patterns, runtime sources, and style signatures to determine the most likely UI stack and caveats.">Framework Fingerprint</h2>
           <span id="frameworkPrimaryChip" class="chip">Unknown</span>
         </section>
-        <p class="hint">Use this to choose the safest implementation channel (theme token, utility class, scoped CSS, etc.).</p>
+        <p class="hint">Open the Side Panel for full framework details and manual override.</p>
         <section id="frameworkList" class="framework-list"></section>
       </section>
 
@@ -134,7 +138,7 @@
           <h2 data-tip-target="true" data-tip="Prioritized implementation guidance by severity, confidence, selector stability, and framework caveats.">Fix Recommendations</h2>
           <span id="recommendationCount" class="chip">0</span>
         </section>
-        <p class="hint">Top recommendations include risk level, preferred channel, and framework-specific caveats.</p>
+        <p class="hint">Open the Side Panel for detailed recommendations with individual apply.</p>
         <section id="recommendationList" class="findings-list"></section>
       </section>
 

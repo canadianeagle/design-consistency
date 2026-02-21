@@ -177,6 +177,118 @@
       caveat:
         "Styled-components class hashes can vary by build. Prefer editing styled definitions or using stable wrapper hooks.",
       preferredChannels: ["component-style", "stable-scope-css"]
+    },
+    react: {
+      id: "react",
+      name: "React",
+      family: "runtime-framework",
+      caveat:
+        "React itself doesn't scope CSS. Fix strategy depends on the CSS solution used (CSS Modules, styled-components, Emotion, Tailwind). Target stable data attributes or semantic selectors.",
+      preferredChannels: ["component-style", "css-module", "scoped-css"]
+    },
+    vue: {
+      id: "vue",
+      name: "Vue.js",
+      family: "runtime-framework",
+      caveat:
+        "Vue scoped styles use data-v-* attribute selectors with higher specificity. Override with matching or higher specificity selectors. CSS custom properties work well for theming.",
+      preferredChannels: ["scoped-css", "css-variable", "deep-selector"]
+    },
+    angular: {
+      id: "angular",
+      name: "Angular",
+      family: "runtime-framework",
+      caveat:
+        "Angular ViewEncapsulation adds _ngcontent-* and _nghost-* attributes creating scoped selectors. Target these attributes or use ::ng-deep (deprecated but functional).",
+      preferredChannels: ["component-style", "css-variable", "ng-deep"]
+    },
+    svelte: {
+      id: "svelte",
+      name: "Svelte",
+      family: "runtime-framework",
+      caveat:
+        "Svelte scopes CSS at compile time with class suffixes (e.g. .class.svelte-abc123). Override with equal specificity or use :global() patterns.",
+      preferredChannels: ["global-style", "css-variable", "scoped-css"]
+    },
+    nextjs: {
+      id: "nextjs",
+      name: "Next.js",
+      family: "meta-framework",
+      caveat:
+        "Next.js supports CSS Modules, styled-jsx, and any CSS-in-JS. Styles are inlined during SSR so external overrides must be injected after Next.js styles.",
+      preferredChannels: ["css-module", "styled-jsx", "scoped-css"]
+    },
+    nuxtjs: {
+      id: "nuxtjs",
+      name: "Nuxt.js",
+      family: "meta-framework",
+      caveat:
+        "Nuxt inherits Vue scoped style system (data-v-* attributes). Override with matching specificity. Nuxt 3 supports useHead() for programmatic style injection.",
+      preferredChannels: ["scoped-css", "css-variable", "deep-selector"]
+    },
+    gatsby: {
+      id: "gatsby",
+      name: "Gatsby",
+      family: "meta-framework",
+      caveat:
+        "Gatsby inlines critical CSS in head during build. Override injection order matters. Supports CSS Modules, styled-components, Emotion, Tailwind via plugins.",
+      preferredChannels: ["css-module", "component-style", "scoped-css"]
+    },
+    ember: {
+      id: "ember",
+      name: "Ember.js",
+      family: "runtime-framework",
+      caveat:
+        "Ember uses plain CSS by default. Octane/Glimmer components can have scoped styles. Standard specificity overrides work for most Ember apps.",
+      preferredChannels: ["scoped-css", "component-style"]
+    },
+    jquery: {
+      id: "jquery",
+      name: "jQuery",
+      family: "utility-library",
+      caveat:
+        "jQuery does not enforce CSS architecture. Sites using jQuery typically use plain CSS or Bootstrap. Standard specificity overrides work.",
+      preferredChannels: ["scoped-css", "css-variable"]
+    },
+    wordpress: {
+      id: "wordpress",
+      name: "WordPress",
+      family: "cms-platform",
+      caveat:
+        "WordPress themes use standard CSS. Gutenberg blocks use .wp-block-* classes. Plugin CSS can conflict with theme styles. Many themes use !important liberally.",
+      preferredChannels: ["css-variable", "scoped-css", "important-override"]
+    },
+    shopify: {
+      id: "shopify",
+      name: "Shopify",
+      family: "cms-platform",
+      caveat:
+        "Shopify themes use Liquid templating with standard CSS. Shopify 2.0 themes use JSON templates with CSS custom properties. Theme styles load from cdn.shopify.com.",
+      preferredChannels: ["css-variable", "scoped-css", "theme-override"]
+    },
+    webflow: {
+      id: "webflow",
+      name: "Webflow",
+      family: "site-builder",
+      caveat:
+        "Webflow generates verbose CSS with high-specificity selectors. w-* classes are stable. Override with equal or higher specificity selectors.",
+      preferredChannels: ["scoped-css", "important-override"]
+    },
+    wix: {
+      id: "wix",
+      name: "Wix",
+      family: "site-builder",
+      caveat:
+        "Wix uses a proprietary rendering engine with iframes and custom elements. Direct CSS overrides are extremely limited. Many elements are in iframes or Shadow DOM.",
+      preferredChannels: ["important-override"]
+    },
+    squarespace: {
+      id: "squarespace",
+      name: "Squarespace",
+      family: "cms-platform",
+      caveat:
+        "Squarespace uses template-based CSS with sqs-* class naming. Custom CSS can be injected via Design > Custom CSS. Some templates use !important.",
+      preferredChannels: ["scoped-css", "css-variable", "important-override"]
     }
   };
 
@@ -597,7 +709,38 @@
     });
   }
 
-  function detectFrameworks(samples) {
+  function generatorMetaContains(keyword) {
+    var meta = document.querySelector('meta[name="generator"]');
+    if (!meta) return false;
+    return new RegExp(keyword, "i").test(meta.getAttribute("content") || "");
+  }
+
+  function countResourceMatches(pattern) {
+    var count = 0;
+    var resources = document.querySelectorAll('link[href], script[src]');
+    for (var i = 0; i < resources.length; i++) {
+      var url = resources[i].href || resources[i].src || '';
+      if (pattern.test(url)) count++;
+    }
+    return count;
+  }
+
+  function countAttributePattern(attrPattern, limit) {
+    var count = 0;
+    var all = document.querySelectorAll('*');
+    var max = Math.min(all.length, limit || 300);
+    for (var i = 0; i < max; i++) {
+      for (var j = 0; j < all[i].attributes.length; j++) {
+        if (attrPattern.test(all[i].attributes[j].name)) {
+          count++;
+          break;
+        }
+      }
+    }
+    return count;
+  }
+
+  function detectFrameworks(samples, config) {
     const inventory = classTokenInventory(samples, 1800);
     const tokens = inventory.tokens;
     const styleSources = sourceInventoryFromStyleSheets();
@@ -607,6 +750,18 @@
     );
 
     const output = [];
+
+    // Check for manual framework override from config
+    var frameworkOverrideId = null;
+    if (config && config.frameworkOverride && config.frameworkOverride.enabled &&
+        config.frameworkOverride.primaryFramework &&
+        config.frameworkOverride.primaryFramework !== "auto") {
+      var overrideId = config.frameworkOverride.primaryFramework;
+      var overrideFramework = FRAMEWORK_LIBRARY_MAP[overrideId];
+      if (overrideFramework) {
+        frameworkOverrideId = overrideId;
+      }
+    }
 
     const muiClassCount = countTokens(tokens, function (token) {
       return /^Mui[A-Z]/.test(token);
@@ -791,11 +946,283 @@
       "Source hints: " + scSourceHints
     ]);
 
+    // --- React detection ---
+    var reactRootCount = countDomMatches("[data-reactroot], [data-reactid]", 200);
+    var reactFiberCount = 0;
+    try {
+      var bodyDivs = document.querySelectorAll("body > div");
+      for (var rfi = 0; rfi < Math.min(bodyDivs.length, 10); rfi++) {
+        var keys = Object.keys(bodyDivs[rfi]);
+        for (var rfj = 0; rfj < keys.length; rfj++) {
+          if (/^__react(Fiber|Container)\$/.test(keys[rfj])) {
+            reactFiberCount++;
+            break;
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+    var reactScriptHints = scriptSources.filter(function (s) {
+      return /react(-dom)?[\.\/-]/.test(s) || s.includes("react.production") || s.includes("react.development");
+    }).length;
+    var reactScore =
+      Math.min(40, reactRootCount * 4) +
+      Math.min(30, reactFiberCount * 15) +
+      Math.min(30, reactScriptHints * 10);
+    pushFrameworkDetection(output, "react", reactScore, [
+      "React root/id attrs: " + reactRootCount,
+      "React fiber keys: " + reactFiberCount,
+      "Script source hints: " + reactScriptHints
+    ]);
+
+    // --- Vue.js detection ---
+    var vueDataAttrCount = countAttributePattern(/^data-v-[a-f0-9]+$/, 200);
+    var vueMetaCount = countDomMatches("[data-vue-meta]", 50);
+    var vueScriptHints = scriptSources.filter(function (s) {
+      return /vue[\.\/-]/.test(s);
+    }).length;
+    var vueScore =
+      Math.min(50, vueDataAttrCount * 2.5) +
+      Math.min(20, vueMetaCount * 5) +
+      Math.min(30, vueScriptHints * 10);
+    pushFrameworkDetection(output, "vue", vueScore, [
+      "data-v-* attrs: " + vueDataAttrCount,
+      "data-vue-meta nodes: " + vueMetaCount,
+      "Script source hints: " + vueScriptHints
+    ]);
+
+    // --- Angular detection ---
+    var ngVersionCount = countDomMatches("[ng-version]", 10);
+    var ngAttrCount = countAttributePattern(/_ng(host|content)-/, 200);
+    var ngAppCount = countDomMatches("[ng-app], .ng-binding", 50);
+    var angularScriptHints = scriptSources.filter(function (s) {
+      return /angular[\.\/-]/.test(s);
+    }).length;
+    var angularScore =
+      Math.min(30, ngVersionCount * 15) +
+      Math.min(30, ngAttrCount * 1.5) +
+      Math.min(20, ngAppCount * 4) +
+      Math.min(20, angularScriptHints * 10);
+    pushFrameworkDetection(output, "angular", angularScore, [
+      "ng-version attrs: " + ngVersionCount,
+      "_ng(host|content) attrs: " + ngAttrCount,
+      "ng-app / ng-binding: " + ngAppCount,
+      "Script source hints: " + angularScriptHints
+    ]);
+
+    // --- Svelte detection ---
+    var svelteClassCount = countTokens(tokens, function (token) {
+      return /\bsvelte-[a-z0-9]+\b/.test(token);
+    });
+    var svelteDataCount = countDomMatches("[data-svelte-h]", 100);
+    var svelteScriptHints = scriptSources.filter(function (s) {
+      return s.includes("svelte") || s.includes("_app/immutable/");
+    }).length;
+    var svelteScore =
+      Math.min(50, svelteClassCount * 1.5) +
+      Math.min(20, svelteDataCount * 2) +
+      Math.min(30, svelteScriptHints * 10);
+    pushFrameworkDetection(output, "svelte", svelteScore, [
+      "Svelte scoped classes: " + svelteClassCount,
+      "data-svelte-h nodes: " + svelteDataCount,
+      "Script source hints: " + svelteScriptHints
+    ]);
+
+    // --- Next.js detection ---
+    var nextDataScript = countDomMatches("script#__NEXT_DATA__", 5);
+    var nextRootDiv = countDomMatches("#__next", 5);
+    var nextResourceHints = countResourceMatches(/\/_next\//);
+    var nextImageHints = countDomMatches("img[src*='/_next/image']", 50);
+    var nextScore =
+      Math.min(30, nextDataScript * 15) +
+      Math.min(20, nextRootDiv * 10) +
+      Math.min(30, nextResourceHints * 3) +
+      Math.min(20, nextImageHints * 4);
+    pushFrameworkDetection(output, "nextjs", nextScore, [
+      "__NEXT_DATA__ script: " + nextDataScript,
+      "#__next div: " + nextRootDiv,
+      "/_next/ resources: " + nextResourceHints,
+      "Next image hints: " + nextImageHints
+    ]);
+
+    // --- Nuxt.js detection ---
+    var nuxtRootDiv = countDomMatches("#__nuxt, #_nuxt", 5);
+    var nuxtResourceHints = countResourceMatches(/\/_nuxt\//);
+    var nuxtDataHead = countDomMatches("[data-n-head]", 50);
+    var nuxtMetaGen = generatorMetaContains("nuxt") ? 1 : 0;
+    var nuxtScore =
+      Math.min(25, nuxtRootDiv * 12) +
+      Math.min(30, nuxtResourceHints * 3) +
+      Math.min(20, nuxtDataHead * 4) +
+      Math.min(25, nuxtMetaGen * 25);
+    pushFrameworkDetection(output, "nuxtjs", nuxtScore, [
+      "#__nuxt / #_nuxt div: " + nuxtRootDiv,
+      "/_nuxt/ resources: " + nuxtResourceHints,
+      "data-n-head nodes: " + nuxtDataHead,
+      "Meta generator (nuxt): " + nuxtMetaGen
+    ]);
+
+    // --- Gatsby detection ---
+    var gatsbyRoot = countDomMatches("#___gatsby", 5);
+    var gatsbyFocus = countDomMatches("#gatsby-focus-wrapper", 5);
+    var gatsbyAnnouncer = countDomMatches("#gatsby-announcer", 5);
+    var gatsbyPageData = countResourceMatches(/\/page-data\//);
+    var gatsbyScore =
+      Math.min(30, gatsbyRoot * 15) +
+      Math.min(20, gatsbyFocus * 10) +
+      Math.min(20, gatsbyAnnouncer * 10) +
+      Math.min(30, gatsbyPageData * 5);
+    pushFrameworkDetection(output, "gatsby", gatsbyScore, [
+      "#___gatsby root: " + gatsbyRoot,
+      "#gatsby-focus-wrapper: " + gatsbyFocus,
+      "#gatsby-announcer: " + gatsbyAnnouncer,
+      "/page-data/ resources: " + gatsbyPageData
+    ]);
+
+    // --- Ember.js detection ---
+    var emberViewCount = countDomMatches(".ember-view, .ember-application", 100);
+    var emberIdCount = 0;
+    try {
+      var allIds = document.querySelectorAll("[id^='ember']");
+      emberIdCount = Math.min(allIds.length, 100);
+    } catch (e) { /* ignore */ }
+    var emberScriptHints = scriptSources.filter(function (s) {
+      return /ember[\.\/-]/.test(s);
+    }).length;
+    var emberScore =
+      Math.min(40, emberViewCount * 2) +
+      Math.min(30, emberIdCount * 1.5) +
+      Math.min(30, emberScriptHints * 10);
+    pushFrameworkDetection(output, "ember", emberScore, [
+      "Ember view/app classes: " + emberViewCount,
+      "Ember IDs (id^=ember): " + emberIdCount,
+      "Script source hints: " + emberScriptHints
+    ]);
+
+    // --- jQuery detection ---
+    var jqueryScriptHints = scriptSources.filter(function (s) {
+      return /jquery[\.\/-]/.test(s) || s.includes("code.jquery.com") || s.includes("ajax.googleapis.com/ajax/libs/jquery");
+    }).length;
+    var jqueryScore = Math.min(100, jqueryScriptHints * 20);
+    pushFrameworkDetection(output, "jquery", jqueryScore, [
+      "jQuery script sources: " + jqueryScriptHints
+    ]);
+
+    // --- WordPress detection ---
+    var wpMetaGen = generatorMetaContains("wordpress") ? 1 : 0;
+    var wpResourceHints = countResourceMatches(/\/wp-content\/|\/wp-includes\//);
+    var wpJsonLink = countDomMatches('link[rel="https://api.w.org/"]', 5);
+    var wpJsonResource = countResourceMatches(/\/wp-json\//);
+    var wpScore =
+      Math.min(30, wpMetaGen * 30) +
+      Math.min(40, wpResourceHints * 3) +
+      Math.min(15, wpJsonLink * 15) +
+      Math.min(15, wpJsonResource * 5);
+    pushFrameworkDetection(output, "wordpress", wpScore, [
+      "Meta generator (WordPress): " + wpMetaGen,
+      "wp-content/wp-includes resources: " + wpResourceHints,
+      "api.w.org link: " + wpJsonLink,
+      "wp-json resources: " + wpJsonResource
+    ]);
+
+    // --- Shopify detection ---
+    var shopifyMetaGen = generatorMetaContains("shopify") ? 1 : 0;
+    var shopifyResourceHints = countResourceMatches(/cdn\.shopify\.com/);
+    var shopifyScore =
+      Math.min(40, shopifyMetaGen * 40) +
+      Math.min(60, shopifyResourceHints * 5);
+    pushFrameworkDetection(output, "shopify", shopifyScore, [
+      "Meta generator (Shopify): " + shopifyMetaGen,
+      "cdn.shopify.com resources: " + shopifyResourceHints
+    ]);
+
+    // --- Webflow detection ---
+    var webflowMetaGen = generatorMetaContains("webflow") ? 1 : 0;
+    var webflowPageAttr = countDomMatches("[data-wf-page]", 5);
+    var webflowSiteAttr = countDomMatches("[data-wf-site]", 5);
+    var webflowClassCount = countTokens(tokens, function (token) {
+      return /^w-/.test(token);
+    });
+    var webflowScriptHints = scriptSources.filter(function (s) {
+      return s.includes("webflow");
+    }).length;
+    var webflowScore =
+      Math.min(25, webflowMetaGen * 25) +
+      Math.min(20, webflowPageAttr * 10) +
+      Math.min(15, webflowSiteAttr * 8) +
+      Math.min(25, webflowClassCount * 0.5) +
+      Math.min(15, webflowScriptHints * 8);
+    pushFrameworkDetection(output, "webflow", webflowScore, [
+      "Meta generator (Webflow): " + webflowMetaGen,
+      "data-wf-page attrs: " + webflowPageAttr,
+      "data-wf-site attrs: " + webflowSiteAttr,
+      "w-* classes: " + webflowClassCount,
+      "Script source hints: " + webflowScriptHints
+    ]);
+
+    // --- Wix detection ---
+    var wixResourceHints = countResourceMatches(/static\.wixstatic\.com|static\.parastorage\.com/);
+    var wixClassCount = countTokens(tokens, function (token) {
+      return /wix-/.test(token);
+    });
+    var wixScore =
+      Math.min(60, wixResourceHints * 5) +
+      Math.min(40, wixClassCount * 1);
+    pushFrameworkDetection(output, "wix", wixScore, [
+      "Wix static resources: " + wixResourceHints,
+      "wix-* classes: " + wixClassCount
+    ]);
+
+    // --- Squarespace detection ---
+    var sqspMetaGen = generatorMetaContains("squarespace") ? 1 : 0;
+    var sqspResourceHints = countResourceMatches(/static\.squarespace\.com/);
+    var sqspClassCount = countTokens(tokens, function (token) {
+      return /^sqs-/.test(token);
+    });
+    var sqspScore =
+      Math.min(35, sqspMetaGen * 35) +
+      Math.min(35, sqspResourceHints * 5) +
+      Math.min(30, sqspClassCount * 1.5);
+    pushFrameworkDetection(output, "squarespace", sqspScore, [
+      "Meta generator (Squarespace): " + sqspMetaGen,
+      "static.squarespace.com resources: " + sqspResourceHints,
+      "sqs-* classes: " + sqspClassCount
+    ]);
+
     output.sort(function (a, b) {
       return b.score - a.score;
     });
 
-    const primary = output.length ? output[0] : null;
+    // Apply framework override if set
+    var primary;
+    if (frameworkOverrideId && output.length) {
+      var overrideEntry = null;
+      for (var oi = 0; oi < output.length; oi++) {
+        if (output[oi].id === frameworkOverrideId) {
+          overrideEntry = output[oi];
+          break;
+        }
+      }
+      if (overrideEntry) {
+        primary = overrideEntry;
+      } else {
+        // Framework was overridden but not detected; create a synthetic entry
+        var overrideFw = FRAMEWORK_LIBRARY_MAP[frameworkOverrideId];
+        primary = {
+          id: overrideFw.id,
+          name: overrideFw.name,
+          family: overrideFw.family,
+          score: 0,
+          confidence: 0,
+          evidence: ["Manual override via config"],
+          caveat: overrideFw.caveat,
+          preferredChannels: overrideFw.preferredChannels || ["scoped-css"],
+          metadata: { manualOverride: true }
+        };
+      }
+    } else {
+      primary = output.length ? output[0] : null;
+    }
+
     const caveats = output.slice(0, 4).map(function (framework) {
       return {
         framework: framework.name,
@@ -4809,6 +5236,87 @@
       };
     }
 
+    if (primaryId === "react") {
+      return {
+        channel: "component-style",
+        rationale:
+          "React does not scope CSS. Target stable data attributes, semantic selectors, or the CSS solution in use (CSS Modules, styled-components, Emotion).",
+        framework: "react"
+      };
+    }
+
+    if (primaryId === "vue") {
+      return {
+        channel: "scoped-css",
+        rationale:
+          "Vue scoped styles use data-v-* attribute selectors. Override with matching or higher specificity selectors, or use CSS custom properties for theming.",
+        framework: "vue"
+      };
+    }
+
+    if (primaryId === "angular") {
+      return {
+        channel: "component-style",
+        rationale:
+          "Angular ViewEncapsulation adds _ngcontent-* attributes creating scoped selectors. Target these attributes or use component-level style overrides.",
+        framework: "angular"
+      };
+    }
+
+    if (primaryId === "svelte") {
+      return {
+        channel: "global-style",
+        rationale:
+          "Svelte scopes CSS at compile time with class suffixes. Override with :global() patterns or CSS custom properties.",
+        framework: "svelte"
+      };
+    }
+
+    if (primaryId === "nextjs") {
+      return {
+        channel: "css-module",
+        rationale:
+          "Next.js supports CSS Modules by default. Fixes should target the module system or use styled-jsx for component-scoped overrides.",
+        framework: "nextjs"
+      };
+    }
+
+    if (primaryId === "wordpress") {
+      return {
+        channel: "css-variable",
+        rationale:
+          "WordPress themes use standard CSS with .wp-block-* classes. Prefer CSS custom property overrides to avoid conflicts with plugin CSS.",
+        framework: "wordpress"
+      };
+    }
+
+    if (primaryId === "shopify") {
+      return {
+        channel: "theme-override",
+        rationale:
+          "Shopify themes use Liquid templating with standard CSS. Override via theme CSS custom properties or scoped selectors targeting stable class names.",
+        framework: "shopify"
+      };
+    }
+
+    if (primaryId === "webflow") {
+      return {
+        channel: "scoped-css",
+        rationale:
+          "Webflow generates verbose CSS with high-specificity selectors. Target stable w-* classes with equal or higher specificity.",
+        framework: "webflow"
+      };
+    }
+
+    if (primaryId === "squarespace") {
+      return {
+        channel: "scoped-css",
+        rationale:
+          "Squarespace uses template-based CSS with sqs-* class naming. Override with scoped selectors or use Design > Custom CSS injection.",
+        framework: "squarespace"
+      };
+    }
+
     return {
       channel: selectorInfo && selectorInfo.strategy ? selectorInfo.strategy : "scoped-css",
       rationale: "Apply fix with a stable scoped selector and validate against neighboring components.",
@@ -5614,7 +6122,7 @@
     });
 
     reportProgress(34, "framework", "Fingerprinting CSS frameworks and caveats");
-    const frameworkReport = detectFrameworks(samples);
+    const frameworkReport = detectFrameworks(samples, config);
 
     reportProgress(38, "css-index", "Indexing stylesheet sources");
     const cssSourceIndex = config.scanning.traceCSS ? buildStyleRuleIndex() : null;
